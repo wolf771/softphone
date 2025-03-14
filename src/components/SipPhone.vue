@@ -294,36 +294,6 @@ beforeUnmount() {
         },
       };
       await this.createUserAgent(configuration);
-
-      this.ua = new SIP.UserAgent(configuration); //Eliminar esta línea
-
-      this.ua.transport.onConnect = () => {
-        this.status = 'Conectado';
-        this.log('Transporte WebSocket conectado');
-      };
-      this.ua.transport.onDisconnect = (error) => {
-        this.status = 'Desconectado';
-        this.log(`Transporte desconectado: ${error?.message || 'Desconocido'}`);
-      };
-
-      this.ua.delegate = {
-        onInvite: (invitation) => {
-          this.log(`Llamada entrante de ${invitation.remoteIdentity.uri.user}`);
-          this.incomingCall = true;
-          this.incomingSession = invitation;
-          this.incomingCaller = invitation.remoteIdentity.uri.user || 'Desconocido';
-          this.status = 'Llamada entrante';
-          this.setupSessionListeners(invitation);
-        },
-      };
-
-      try {
-        await this.ua.start();
-        this.log('Conexión SIP establecida');
-      } catch (error) {
-        this.status = 'Error de conexión';
-        this.log(`Error al conectar: ${error.message}`);
-      }
     },
     dial(digit) {
       this.phoneNumber += digit;
@@ -710,12 +680,9 @@ beforeUnmount() {
   handleOffline() {
     this.log('Se ha perdido la conexión a internet');
     this.connectionLost = true;
-  },
-};
-
-  },
-  
-
+  }
+  } // Cierre de methods
+}; // Cierre de export default
   
 </script>
 
