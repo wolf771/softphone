@@ -5,7 +5,11 @@
         <input v-model="phoneNumber" placeholder="Marca un número" :disabled="callInProgress || incomingCall" class="number-input" />
         <div class="status">{{ status }}</div>
       </div>
-
+      <div v-if="reconnecting" class="reconnecting-indicator">
+        <span>Reconectando</span>
+        <span class="dots">{{ reconnectingDots }}</span>
+      </div>
+      
       <div class="dial-pad">
         <button v-for="digit in dialPad" :key="digit" @click="dial(digit)" :disabled="callInProgress || incomingCall" class="dial-button">
           {{ digit }}
@@ -13,7 +17,7 @@
       </div>
 
       <div class="call-controls">
-        <button @click="makeCall" :disabled="!phoneNumber || callInProgress || incomingCall" class="call-button">
+        <button @click="makeCall" :disabled="!phoneNumber || callInProgress || incomingCall || reconnecting" class="call-button">
           <font-awesome-icon icon="phone" size="lg" />
         </button>
         <button @click="hangUp" :disabled="!callInProgress && !incomingCall" class="hang-up-button">
@@ -46,7 +50,15 @@
           <font-awesome-icon icon="phone-slash" size="lg" />
         </button>
       </div>
-
+      <div class="connection-controls">
+        <button @click="manualReconnect" :disabled="!connectionLost || reconnecting" class="reconnect-button" title="Reconectar manualmente">
+          <font-awesome-icon icon="sync" size="lg" />
+        </button>
+        <div class="connection-status" :class="connectionStatusClass">
+          <font-awesome-icon :icon="connectionStatusIcon" size="sm" />
+          <span>{{ connectionStatusText }}</span>
+        </div>
+      </div>
       <div class="debug-logs">
         <h3>Logs</h3>
         <ul>
@@ -83,13 +95,63 @@ export default {
       hasAudioDevice: false,
       dialPad: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'],
       debugLogs: [],
+      reconnecting: false,
+      reconnectAttempts: 0,
+      maxReconnectAttempts: 10,
+      reconnectInterval: 3000, // 3 segundos iniciales
+      maxReconnectInterval: 30000, // máximo 30 segundos
+      reconnectTimer: null,
+      connectionLost: false,
+      lastConnectedTime: null,
+      reconnectingDots: '.',
+      dotsTimer: null,
+      sipConfig: null, // Para guardar la última configuración SIP exitosa
     };
   },
-  mounted() {
-    this.detectDevices();
-    this.initializeSIP();
-    setInterval(this.detectDevices, 10000);
+  computed: {
+  connectionStatusClass() {
+    if (this.reconnecting) return 'reconnecting';
+    return this.connectionLost ? 'disconnected' : 'connected';
   },
+  connectionStatusIcon() {
+    if (this.reconnecting) return 'sync';
+    return this.connectionLost ? 'exclamation-triangle' : 'signal';
+  },
+  connectionStatusText() {
+    if (this.reconnecting) return `Reconectando (${this.reconnectAttempts}/${this.maxReconnectAttempts})`;
+    return this.connectionLost ? 'Desconectado' : 'Conectado';
+  }
+},
+mounted() {
+  this.detectDevices();
+  this.initializeSIP();
+  setInterval(this.detectDevices, 10000);
+  
+  // Iniciar animación de puntos para reconexión
+  this.dotsTimer = setInterval(() => {
+    if (this.reconnectingDots.length >= 3) {
+      this.reconnectingDots = '.';
+    } else {
+      this.reconnectingDots += '.';
+    }
+  }, 500);
+  
+  // Monitorear la conectividad a internet
+  window.addEventListener('online', this.handleOnline);
+  window.addEventListener('offline', this.handleOffline);
+},
+beforeUnmount() {
+  // Limpiar timers y event listeners
+  if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+  if (this.dotsTimer) clearInterval(this.dotsTimer);
+  window.removeEventListener('online', this.handleOnline);
+  window.removeEventListener('offline', this.handleOffline);
+  
+  // Cerrar UA si existe
+  if (this.ua) {
+    this.ua.stop();
+  }
+},
   methods: {
     log(message) {
       const timestamp = new Date().toLocaleTimeString();
@@ -110,6 +172,72 @@ export default {
         this.log(`Error al detectar dispositivos: ${error.message}`);
       }
     },
+    async createUserAgent(configuration) {
+    try {
+      if (this.ua) {
+        // Si ya hay un UA activo, detenerlo primero
+        await this.ua.stop();
+        this.ua = null;
+      }
+      
+      this.ua = new SIP.UserAgent(configuration);
+      
+      this.ua.transport.onConnect = () => {
+        this.status = 'Conectado';
+        this.log('Transporte WebSocket conectado');
+        this.connectionLost = false;
+        this.reconnecting = false;
+        this.reconnectAttempts = 0;
+        this.lastConnectedTime = Date.now();
+        
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+      };
+      
+      this.ua.transport.onDisconnect = (error) => {
+        const errorMsg = error?.message || 'Desconocido';
+        this.log(`Transporte desconectado: ${errorMsg}`);
+        
+        if (this.callInProgress) {
+          this.log('Llamada interrumpida por pérdida de conexión');
+          this.resetCallState();
+        }
+        
+        this.status = 'Desconectado';
+        this.connectionLost = true;
+        
+        // Iniciar proceso de reconexión automática
+        if (!this.reconnecting) {
+          this.startReconnection();
+        }
+      };
+
+      this.ua.delegate = {
+        onInvite: (invitation) => {
+          this.log(`Llamada entrante de ${invitation.remoteIdentity.uri.user}`);
+          this.incomingCall = true;
+          this.incomingSession = invitation;
+          this.incomingCaller = invitation.remoteIdentity.uri.user || 'Desconocido';
+          this.status = 'Llamada entrante';
+          this.setupSessionListeners(invitation);
+        },
+      };
+
+      await this.ua.start();
+      this.log('Conexión SIP establecida');
+    } catch (error) {
+      this.status = 'Error de conexión';
+      this.log(`Error al conectar: ${error.message}`);
+      this.connectionLost = true;
+      
+      // Iniciar reconexión automática
+      if (!this.reconnecting) {
+        this.startReconnection();
+      }
+    }
+  },
     async initializeSIP() {
       const sipServer = import.meta.env.VITE_SIP_SERVER || 'wss://webrtc.soportedinamico.com:8089/ws';
       const sipUser = import.meta.env.VITE_SIP_USER;
@@ -118,13 +246,21 @@ export default {
       this.log(`Iniciando conexión a ${sipServer} con usuario ${sipUser}`);
       const uri = SIP.UserAgent.makeURI(`sip:${sipUser}@webrtc.soportedinamico.com`);
 
+      // Guardar configuración para reconexiones futuras
+      this.sipConfig = {
+        server: sipServer,
+        user: sipUser,
+        password: sipPassword,
+        domain: 'webrtc.soportedinamico.com'
+      };
+
       const configuration = {
         uri,
         transportOptions: {
           wsServers: [sipServer],
           traceSip: true,
           connectionTimeout: 15,
-          reconnectionAttempts: 999,
+          reconnectionAttempts: 0, // Manejamos la reconexión manualmente
           reconnectionTimeout: 3,
         },
         authorizationUsername: sipUser,
@@ -157,6 +293,7 @@ export default {
           },
         },
       };
+      await this.createUserAgent(configuration);
 
       this.ua = new SIP.UserAgent(configuration);
 
@@ -472,6 +609,111 @@ export default {
       this.log('Estado de llamada reiniciado');
     },
   },
+  
+
+  startReconnection() {
+    if (!this.sipConfig) {
+      this.log('No hay configuración SIP disponible para reconexión');
+      return;
+    }
+    
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.log(`Se alcanzó el máximo de intentos de reconexión (${this.maxReconnectAttempts})`);
+      this.reconnecting = false;
+      return;
+    }
+    
+    this.reconnecting = true;
+    this.reconnectAttempts++;
+    
+    // Usar backoff exponencial para los intervalos de reconexión
+    const delay = Math.min(this.reconnectInterval * Math.pow(1.5, this.reconnectAttempts - 1), this.maxReconnectInterval);
+    
+    this.log(`Intentando reconexión (${this.reconnectAttempts}/${this.maxReconnectAttempts}) en ${delay/1000} segundos...`);
+    
+    this.reconnectTimer = setTimeout(async () => {
+      this.log('Ejecutando reconexión...');
+      
+      const { server, user, password, domain } = this.sipConfig;
+      const uri = SIP.UserAgent.makeURI(`sip:${user}@${domain}`);
+      
+      const configuration = {
+        uri,
+        transportOptions: {
+          wsServers: [server],
+          traceSip: true,
+          connectionTimeout: 15,
+          reconnectionAttempts: 0,
+          reconnectionTimeout: 3,
+        },
+        authorizationUsername: user,
+        authorizationPassword: password,
+        register: true,
+        userAgentString: `Browser Phone 0.3.29 (SIPJS - 0.20.0)`,
+        registerOptions: {
+          expires: 300,
+          refreshFrequency: 50,
+        },
+        sessionDescriptionHandlerFactoryOptions: {
+          peerConnectionOptions: {
+            rtcConfiguration: {
+              iceServers: JSON.parse('[{"urls": "stun:stun.l.google.com:19302"}]'),
+              bundlePolicy: 'balanced',
+              rtcpMuxPolicy: 'negotiate',
+              iceTransportPolicy: 'all',
+              iceCandidatePoolSize: 0,
+            },
+            iceCheckingTimeout: 500,
+          },
+          alwaysAcquireMediaFirst: true,
+          constraints: {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false,
+          },
+        },
+      };
+      
+      try {
+        await this.createUserAgent(configuration);
+      } catch (error) {
+        this.log(`Error en intento de reconexión: ${error.message}`);
+        
+        // Programar el siguiente intento si no alcanzamos el máximo
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.startReconnection();
+        } else {
+          this.reconnecting = false;
+          this.log('Se han agotado los intentos de reconexión');
+        }
+      }
+    }, delay);
+  },
+
+  manualReconnect() {
+    if (this.reconnecting) return;
+    
+    this.log('Reconexión manual iniciada');
+    this.reconnectAttempts = 0;
+    this.startReconnection();
+  },
+
+  handleOnline() {
+    this.log('Se ha detectado conexión a internet');
+    if (this.connectionLost && !this.reconnecting) {
+      this.log('Intentando reconexión automática al volver a estar en línea');
+      this.reconnectAttempts = 0;
+      this.startReconnection();
+    }
+  },
+
+  handleOffline() {
+    this.log('Se ha perdido la conexión a internet');
+    this.connectionLost = true;
+  },
 };
 </script>
 
@@ -687,5 +929,64 @@ export default {
 .debug-logs li {
   padding: 2px 0;
   color: #ccc;
+}
+.reconnecting-indicator {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #ffc107;
+  animation: blink 1s infinite;
+}
+
+.reconnecting-indicator .dots {
+  display: inline-block;
+  min-width: 20px;
+}
+
+@keyframes blink {
+  50% { opacity: 0.5; }
+}
+
+.connection-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding: 8px;
+  background: #333;
+  border-radius: 5px;
+}
+
+.reconnect-button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: #007bff;
+  color: white;
+  cursor: pointer;
+}
+
+.reconnect-button:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.connection-status.connected {
+  color: #28a745;
+}
+
+.connection-status.disconnected {
+  color: #dc3545;
+}
+
+.connection-status.reconnecting {
+  color: #ffc107;
 }
 </style>
