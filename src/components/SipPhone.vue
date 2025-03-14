@@ -50,6 +50,76 @@
           <font-awesome-icon icon="phone-slash" size="lg" />
         </button>
       </div>
+      <!-- Sección de historial de llamadas -->
+      <div class="call-history">
+        <div class="history-header">
+          <h3>Historial de llamadas</h3>
+          <button @click="clearCallHistory" class="clear-history-button" title="Limpiar historial" v-if="callHistory.length > 0">
+            <font-awesome-icon icon="trash-alt" size="sm" />
+          </button>
+        </div>
+        <div class="history-tabs">
+          <button 
+            @click="activeHistoryTab = 'all'" 
+            :class="{ active: activeHistoryTab === 'all' }"
+            class="history-tab-button"
+          >
+            Todas
+          </button>
+          <button 
+            @click="activeHistoryTab = 'incoming'" 
+            :class="{ active: activeHistoryTab === 'incoming' }"
+            class="history-tab-button"
+          >
+            Recibidas
+          </button>
+          <button 
+            @click="activeHistoryTab = 'outgoing'" 
+            :class="{ active: activeHistoryTab === 'outgoing' }"
+            class="history-tab-button"
+          >
+            Realizadas
+          </button>
+          <button 
+            @click="activeHistoryTab = 'missed'" 
+            :class="{ active: activeHistoryTab === 'missed' }"
+            class="history-tab-button"
+          >
+            Perdidas
+          </button>
+        </div>
+        <div class="history-list-container">
+          <ul class="history-list" v-if="filteredCallHistory.length > 0">
+            <li v-for="(call, index) in filteredCallHistory" :key="index" class="history-item" :class="call.type">
+              <div class="call-icon">
+                <font-awesome-icon 
+                  :icon="getCallIcon(call.type)" 
+                  :class="call.type" 
+                  size="sm" 
+                />
+              </div>
+              <div class="call-details">
+                <div class="call-number">{{ call.number }}</div>
+                <div class="call-time">{{ formatCallTime(call.timestamp) }}</div>
+                <div class="call-duration" v-if="call.duration && call.type !== 'missed'">
+                  {{ formatDuration(call.duration) }}
+                </div>
+              </div>
+              <div class="call-actions">
+                <button @click="callFromHistory(call.number)" class="call-action-button" title="Llamar">
+                  <font-awesome-icon icon="phone" size="sm" />
+                </button>
+                <button @click="copyToPhoneNumber(call.number)" class="copy-action-button" title="Copiar al teclado">
+                  <font-awesome-icon icon="copy" size="sm" />
+                </button>
+              </div>
+            </li>
+          </ul>
+          <div v-else class="no-history">
+            No hay llamadas {{ getHistoryTabText() }}
+          </div>
+        </div>
+      </div>
       <div class="connection-controls">
         <button @click="manualReconnect" :disabled="!connectionLost || reconnecting" class="reconnect-button" title="Reconectar manualmente">
           <font-awesome-icon icon="sync" size="lg" />
@@ -106,6 +176,10 @@ export default {
       reconnectingDots: '.',
       dotsTimer: null,
       sipConfig: null, // Para guardar la última configuración SIP exitosa
+      callHistory: [],
+      activeHistoryTab: 'all', // 'all', 'incoming', 'outgoing', 'missed'
+      maxHistoryItems: 50, // Número máximo de llamadas en el historial
+      currentCallStart: null, // Timestamp cuando inicia la llamada actual
     };
   },
   computed: {
@@ -120,11 +194,19 @@ export default {
   connectionStatusText() {
     if (this.reconnecting) return `Reconectando (${this.reconnectAttempts}/${this.maxReconnectAttempts})`;
     return this.connectionLost ? 'Desconectado' : 'Conectado';
+  },
+  filteredCallHistory() { // Aquí faltaba la coma
+    if (this.activeHistoryTab === 'all') {
+      return this.callHistory;
+    } else {
+      return this.callHistory.filter(call => call.type === this.activeHistoryTab);
+    }
   }
 },
 mounted() {
   this.detectDevices();
   this.initializeSIP();
+  this.loadCallHistory(); // Cargar historial de llamadas desde localStorage
   setInterval(this.detectDevices, 10000);
   
   // Iniciar animación de puntos para reconexión
@@ -340,6 +422,7 @@ beforeUnmount() {
 
       try {
         await inviter.invite();
+        this.currentCallStart = Date.now(); // Registrar inicio de llamada
         this.log('Invitación SIP enviada');
       } catch (error) {
         this.status = 'Error en la llamada';
@@ -376,7 +459,16 @@ beforeUnmount() {
             stream: this.localStream,
           },
         });
-        this.session = this.incomingSession; // Asegurar que this.session se actualice
+        this.session = this.incomingSession; 
+        this.currentCallStart = Date.now(); // Registrar inicio de llamada entrante
+        // Registrar llamada entrante en el historial
+        this.addCallToHistory({
+          number: this.incomingCaller,
+          type: 'incoming',
+          timestamp: Date.now(),
+          duration: 0, // Se actualizará al finalizar la llamada
+          endReason: 'accepted'
+        });// Asegurar que this.session se actualice
         this.callInProgress = true;
         this.incomingCall = false;
         this.status = 'En llamada';
@@ -394,6 +486,14 @@ beforeUnmount() {
         this.incomingCall = false;
         this.incomingSession = null;
         this.status = 'Llamada rechazada';
+        // Registrar llamada rechazada
+        this.addCallToHistory({
+          number: this.incomingCaller,
+          type: 'missed',
+          timestamp: Date.now(),
+          duration: 0,
+          endReason: 'rejected'
+        });
       }
     },
     hangUp() {
@@ -566,6 +666,19 @@ beforeUnmount() {
       }
     },
     resetCallState() {
+  // Registrar la llamada si es necesario
+      if (this.callInProgress && this.currentCallStart) {
+        const callNumber = this.session?.remoteIdentity?.uri?.user || this.phoneNumber;
+        this.addCallToHistory({
+          number: callNumber,
+          type: 'outgoing',
+          timestamp: this.currentCallStart,
+          duration: Math.floor((Date.now() - this.currentCallStart) / 1000),
+          endReason: 'completed'
+        });
+        this.currentCallStart = null;
+      }
+
       this.cleanupStream();
       this.session = null;
       this.callInProgress = false;
@@ -680,6 +793,87 @@ beforeUnmount() {
   handleOffline() {
     this.log('Se ha perdido la conexión a internet');
     this.connectionLost = true;
+  },
+    // Métodos para historial de llamadas
+  addCallToHistory(call) {
+    // Agregar llamada al historial
+    this.callHistory.unshift(call); // Añadir al inicio del array
+    
+    // Limitar el tamaño del historial
+    if (this.callHistory.length > this.maxHistoryItems) {
+      this.callHistory = this.callHistory.slice(0, this.maxHistoryItems);
+    }
+    
+    // Guardar en localStorage
+    this.saveCallHistory();
+    
+    // Registrar en logs
+    this.log(`Llamada ${call.type} ${call.endReason === 'missed' ? 'perdida' : 'registrada'}: ${call.number}`);
+  },
+
+  saveCallHistory() {
+    try {
+      localStorage.setItem('callHistory', JSON.stringify(this.callHistory));
+    } catch (error) {
+      this.log(`Error al guardar historial: ${error.message}`);
+    }
+  },
+
+  loadCallHistory() {
+    try {
+      const saved = localStorage.getItem('callHistory');
+      if (saved) {
+        this.callHistory = JSON.parse(saved);
+        this.log(`Historial de llamadas cargado: ${this.callHistory.length} llamadas`);
+      }
+    } catch (error) {
+      this.log(`Error al cargar historial: ${error.message}`);
+      this.callHistory = [];
+    }
+  },
+
+  clearCallHistory() {
+    this.callHistory = [];
+    localStorage.removeItem('callHistory');
+    this.log('Historial de llamadas borrado');
+  },
+
+  callFromHistory(number) {
+    this.phoneNumber = number;
+    this.makeCall();
+  },
+
+  copyToPhoneNumber(number) {
+    this.phoneNumber = number;
+  },
+
+  getCallIcon(type) {
+    switch (type) {
+      case 'incoming': return 'phone-alt';
+      case 'outgoing': return 'phone-volume';
+      case 'missed': return 'phone-slash';
+      default: return 'phone';
+    }
+  },
+
+  formatCallTime(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+  },
+
+  formatDuration(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  },
+
+  getHistoryTabText() {
+    switch (this.activeHistoryTab) {
+      case 'incoming': return 'recibidas';
+      case 'outgoing': return 'realizadas';
+      case 'missed': return 'perdidas';
+      default: return 'registradas';
+    }
   }
   } // Cierre de methods
 }; // Cierre de export default
@@ -957,5 +1151,137 @@ beforeUnmount() {
 
 .connection-status.reconnecting {
   color: #ffc107;
+}
+/* Estilos para historial de llamadas */
+.call-history {
+  margin-top: 15px;
+  background: #222;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.history-header {
+  padding: 10px;
+  background: #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.clear-history-button {
+  background: transparent;
+  border: none;
+  color: #dc3545;
+  cursor: pointer;
+  padding: 5px;
+}
+
+.history-tabs {
+  display: flex;
+  background: #444;
+}
+
+.history-tab-button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 8px 5px;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+  transition: background 0.2s, color 0.2s;
+}
+
+.history-tab-button.active {
+  background: #666;
+  color: white;
+  font-weight: bold;
+}
+
+.history-list-container {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.history-item {
+  display: flex;
+  padding: 10px;
+  border-bottom: 1px solid #444;
+  align-items: center;
+}
+
+.call-icon {
+  margin-right: 10px;
+  width: 20px;
+  text-align: center;
+}
+
+.incoming {
+  color: #28a745;
+}
+
+.outgoing {
+  color: #007bff;
+}
+
+.missed {
+  color: #dc3545;
+}
+
+.call-details {
+  flex-grow: 1;
+}
+
+.call-number {
+  font-size: 14px;
+}
+
+.call-time, .call-duration {
+  font-size: 10px;
+  color: #aaa;
+  margin-top: 2px;
+}
+
+.call-actions {
+  display: flex;
+}
+
+.call-action-button, .copy-action-button {
+  width: 30px;
+  height: 30px;
+  background: #444;
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  margin-left: 5px;
+}
+
+.call-action-button:hover {
+  background: #28a745;
+}
+
+.copy-action-button:hover {
+  background: #007bff;
+}
+
+.no-history {
+  padding: 15px;
+  text-align: center;
+  color: #aaa;
+  font-size: 12px;
 }
 </style>
