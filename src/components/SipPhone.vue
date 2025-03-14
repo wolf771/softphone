@@ -295,7 +295,7 @@ beforeUnmount() {
       };
       await this.createUserAgent(configuration);
 
-      this.ua = new SIP.UserAgent(configuration);
+      this.ua = new SIP.UserAgent(configuration); //Eliminar esta línea
 
       this.ua.transport.onConnect = () => {
         this.status = 'Conectado';
@@ -608,10 +608,7 @@ beforeUnmount() {
       this.$refs.remoteAudio.srcObject = null;
       this.log('Estado de llamada reiniciado');
     },
-  },
-  
-
-  startReconnection() {
+    startReconnection() {
     if (!this.sipConfig) {
       this.log('No hay configuración SIP disponible para reconexión');
       return;
@@ -715,6 +712,11 @@ beforeUnmount() {
     this.connectionLost = true;
   },
 };
+
+  },
+  
+
+  
 </script>
 
 <style scoped>
