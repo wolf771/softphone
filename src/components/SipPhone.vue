@@ -1,46 +1,120 @@
 <template>
-  <div class="sip-phone">
+  <div class="sip-phone-container">
+    <!-- Botón para mostrar/ocultar el historial -->
+    <button @click="toggleHistoryVisibility" class="toggle-history-button" :title="showCallHistory ? 'Ocultar historial' : 'Mostrar historial'">
+      <font-awesome-icon :icon="showCallHistory ? 'chevron-right' : 'chevron-left'" />
+    </button>
     <div class="phone-body">
-      <div class="phone-screen">
-        <input v-model="phoneNumber" placeholder="Marca un número" :disabled="callInProgress || incomingCall" class="number-input" />
-        <div class="status">{{ status }}</div>
+      <div class="main-section">
+        <div class="phone-screen">
+          <input 
+            v-model="phoneNumber" 
+            placeholder="Marca un número" 
+            :disabled="callInProgress || incomingCall" 
+            class="number-input"
+            @keyup.enter="handleEnterKey" 
+          />
+          <div class="status">{{ status }}</div>
+        </div>
+
+        <div class="controls-section">
+          <div class="left-panel">
+            <div class="dial-pad">
+              <button v-for="digit in dialPad" :key="digit" @click="dial(digit)" :disabled="callInProgress || incomingCall" class="dial-button">
+                {{ digit }}
+              </button>
+            </div>
+
+            <div class="call-controls">
+              <button @click="makeCall" :disabled="!phoneNumber || callInProgress || incomingCall || reconnecting" class="call-button">
+                <font-awesome-icon icon="phone" size="lg" />
+              </button>
+              <button @click="hangUp" :disabled="!callInProgress && !incomingCall" class="hang-up-button">
+                <font-awesome-icon icon="phone-slash" size="lg" />
+              </button>
+              <button @click="toggleHold" :disabled="!callInProgress || transferring" class="control-button">
+                <font-awesome-icon :icon="onHold ? 'play' : 'pause'" size="lg" />
+              </button>
+              <button @click="initTransfer" :disabled="!callInProgress || onHold || transferring" class="control-button">
+                <font-awesome-icon icon="share-square" size="lg" />
+              </button>
+            </div>
+          </div>
+
+          <div class="right-panel">
+            <div class="volume-and-device-section">
+              <div class="collapsible-section">
+                <div class="section-header" @click="toggleVolumeControls">
+                  <h3>Controles de Volumen</h3>
+                  <font-awesome-icon :icon="showVolumeControls ? 'chevron-up' : 'chevron-down'" />
+                </div>
+                <div v-show="showVolumeControls" class="volume-controls">
+                  <h3>Controles de Volumen</h3>
+                  <div class="volume-control">
+                    <label for="incomingVolume">Volumen Entrante</label>
+                    <input type="range" id="incomingVolume" v-model="incomingVolume" min="0" max="1" step="0.01" @input="adjustIncomingVolume" />
+                  </div>
+                  <div class="volume-control">
+                    <label for="outgoingVolume">Volumen Saliente</label>
+                    <input type="range" id="outgoingVolume" v-model="outgoingVolume" min="0" max="1" step="0.01" @input="adjustOutgoingVolume" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="collapsible-section">
+                <div class="section-header" @click="toggleAudioDevices">
+                  <h3>Dispositivos de Audio</h3>
+                  <font-awesome-icon :icon="showAudioDevices ? 'chevron-up' : 'chevron-down'" />
+                </div>
+                <div v-show="showAudioDevices" class="audio-device-controls">
+                  <h3>Dispositivos de Audio</h3>
+                  <select v-model="selectedAudioDevice" @change="changeAudioDevice">
+                    <option v-for="device in audioInputDevices" :key="device.deviceId" :value="device.deviceId">
+                      {{ device.label || 'Dispositivo sin etiqueta' }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="collapsible-section">
+                <div class="section-header" @click="toggleCredentials">
+                  <h3>Credenciales SIP</h3>
+                  <font-awesome-icon :icon="showCredentials ? 'chevron-up' : 'chevron-down'" />
+                </div>
+                <div v-show="showCredentials" class="credentials">
+                  <h3>Credenciales SIP</h3>
+                  <input v-model="sipUser" placeholder="Usuario SIP" class="credentials-input" />
+                  <input v-model="sipPassword" type="password" placeholder="Contraseña SIP" class="credentials-input" />
+                  <button @click="saveCredentials" class="save-credentials-button">Guardar Credenciales</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="frequent-contacts">
+              <h3>Contactos Frecuentes</h3>
+              <ul>
+                <li v-for="(contact, index) in frequentContacts" :key="index">
+                  {{ contact }}
+                  <button @click="callFromHistory(contact)" class="call-action-button" title="Llamar">
+                    <font-awesome-icon icon="phone" size="sm" />
+                  </button>
+                  <button @click="removeFrequentContact(index)" class="remove-action-button" title="Eliminar">
+                    <font-awesome-icon icon="trash-alt" size="sm" />
+                  </button>
+                </li>
+              </ul>
+              <input v-model="newContact" placeholder="Agregar nuevo contacto" class="new-contact-input" />
+              <button @click="addFrequentContact" class="add-contact-button">Agregar</button>
+            </div>
+          </div>
+        </div>
       </div>
+
       <div v-if="reconnecting" class="reconnecting-indicator">
         <span>Reconectando</span>
         <span class="dots">{{ reconnectingDots }}</span>
       </div>
       
-      <div class="dial-pad">
-        <button v-for="digit in dialPad" :key="digit" @click="dial(digit)" :disabled="callInProgress || incomingCall" class="dial-button">
-          {{ digit }}
-        </button>
-      </div>
-
-      <div class="call-controls">
-        <button @click="makeCall" :disabled="!phoneNumber || callInProgress || incomingCall || reconnecting" class="call-button">
-          <font-awesome-icon icon="phone" size="lg" />
-        </button>
-        <button @click="hangUp" :disabled="!callInProgress && !incomingCall" class="hang-up-button">
-          <font-awesome-icon icon="phone-slash" size="lg" />
-        </button>
-        <button @click="toggleHold" :disabled="!callInProgress || transferring" class="control-button">
-          <font-awesome-icon :icon="onHold ? 'play' : 'pause'" size="lg" />
-        </button>
-        <button @click="initTransfer" :disabled="!callInProgress || onHold || transferring" class="control-button">
-          <font-awesome-icon icon="share-square" size="lg" />
-        </button>
-      </div>
-
-      <div class="transfer-section" v-if="transferring">
-        <input v-model="transferNumber" placeholder="Número para transferir" class="transfer-input" />
-        <button @click="completeTransfer" class="transfer-confirm">
-          <font-awesome-icon icon="check" />
-        </button>
-        <button @click="cancelTransfer" class="transfer-cancel">
-          <font-awesome-icon icon="times" />
-        </button>
-      </div>
-
       <div class="incoming-call" v-if="incomingCall && !callInProgress">
         <p>Llamada entrante de: {{ incomingCaller }}</p>
         <button @click="acceptCall" class="accept-button">
@@ -50,94 +124,132 @@
           <font-awesome-icon icon="phone-slash" size="lg" />
         </button>
       </div>
-      <!-- Sección de historial de llamadas -->
-      <div class="call-history">
-        <div class="history-header">
-          <h3>Historial de llamadas</h3>
-          <button @click="clearCallHistory" class="clear-history-button" title="Limpiar historial" v-if="callHistory.length > 0">
-            <font-awesome-icon icon="trash-alt" size="sm" />
-          </button>
-        </div>
-        <div class="history-tabs">
-          <button 
-            @click="activeHistoryTab = 'all'" 
-            :class="{ active: activeHistoryTab === 'all' }"
-            class="history-tab-button"
-          >
-            Todas
-          </button>
-          <button 
-            @click="activeHistoryTab = 'incoming'" 
-            :class="{ active: activeHistoryTab === 'incoming' }"
-            class="history-tab-button"
-          >
-            Recibidas
-          </button>
-          <button 
-            @click="activeHistoryTab = 'outgoing'" 
-            :class="{ active: activeHistoryTab === 'outgoing' }"
-            class="history-tab-button"
-          >
-            Realizadas
-          </button>
-          <button 
-            @click="activeHistoryTab = 'missed'" 
-            :class="{ active: activeHistoryTab === 'missed' }"
-            class="history-tab-button"
-          >
-            Perdidas
-          </button>
-        </div>
-        <div class="history-list-container">
-          <ul class="history-list" v-if="filteredCallHistory.length > 0">
-            <li v-for="(call, index) in filteredCallHistory" :key="index" class="history-item" :class="call.type">
-              <div class="call-icon">
-                <font-awesome-icon 
-                  :icon="getCallIcon(call.type)" 
-                  :class="call.type" 
-                  size="sm" 
-                />
-              </div>
-              <div class="call-details">
-                <div class="call-number">{{ call.number }}</div>
-                <div class="call-time">{{ formatCallTime(call.timestamp) }}</div>
-                <div class="call-duration" v-if="call.duration && call.type !== 'missed'">
-                  {{ formatDuration(call.duration) }}
-                </div>
-              </div>
-              <div class="call-actions">
-                <button @click="callFromHistory(call.number)" class="call-action-button" title="Llamar">
-                  <font-awesome-icon icon="phone" size="sm" />
-                </button>
-                <button @click="copyToPhoneNumber(call.number)" class="copy-action-button" title="Copiar al teclado">
-                  <font-awesome-icon icon="copy" size="sm" />
-                </button>
-              </div>
-            </li>
-          </ul>
-          <div v-else class="no-history">
-            No hay llamadas {{ getHistoryTabText() }}
-          </div>
-        </div>
-      </div>
       <div class="connection-controls">
-        <button @click="manualReconnect" :disabled="!connectionLost || reconnecting" class="reconnect-button" title="Reconectar manualmente">
-          <font-awesome-icon icon="sync" size="lg" />
-        </button>
+        <div class="connection-buttons">
+          <button @click="manualReconnect" :disabled="!connectionLost || reconnecting" class="reconnect-button" title="Reconectar manualmente">
+            <font-awesome-icon icon="sync" size="lg" />
+          </button>
+          <button @click="registerUser" :disabled="isRegistered || !ua || reconnecting" class="register-button" title="Registrar usuario">
+            <font-awesome-icon icon="user-plus" size="lg" />
+          </button>
+          <button @click="unregisterUser" :disabled="!isRegistered || reconnecting" class="unregister-button" title="Desregistrar usuario">
+            <font-awesome-icon icon="user-minus" size="lg" />
+          </button>
+        </div>
         <div class="connection-status" :class="connectionStatusClass">
           <font-awesome-icon :icon="connectionStatusIcon" size="sm" />
           <span>{{ connectionStatusText }}</span>
         </div>
       </div>
       <div class="debug-logs">
-        <h3>Logs</h3>
-        <ul>
+        <h3 @click="toggleLogsVisibility">Logs <span>{{ showLogs ? '▲' : '▼' }}</span></h3>
+        <ul v-if="showLogs">
           <li v-for="(log, index) in debugLogs" :key="index">{{ log }}</li>
         </ul>
       </div>
 
       <audio ref="remoteAudio" autoplay></audio>
       <audio ref="localAudio" muted></audio>
+      <audio ref="ringtoneAudio" preload="auto" loop>
+        <source :src="ringtoneUrl" type="audio/mpeg">
+      </audio>
+      <audio ref="ringbackAudio" preload="auto" loop>
+        <source src="/sounds/ringback.mp3" type="audio/mpeg">
+      </audio>
+    </div>
+    
+    <!-- Panel de historial a la derecha -->
+    <div class="call-history-panel" :class="{ 'hidden': !showCallHistory }">
+      <div class="history-header">
+        <h3>Historial de llamadas</h3>
+        <button @click="clearCallHistory" class="clear-history-button" title="Limpiar historial" v-if="callHistory.length > 0">
+          <font-awesome-icon icon="trash-alt" size="sm" />
+        </button>
+      </div>
+      <div class="history-tabs">
+        <button 
+          @click="activeHistoryTab = 'all'" 
+          :class="{ active: activeHistoryTab === 'all' }"
+          class="history-tab-button"
+        >
+          Todas
+        </button>
+        <button 
+          @click="activeHistoryTab = 'incoming'" 
+          :class="{ active: activeHistoryTab === 'incoming' }"
+          class="history-tab-button"
+        >
+          Recibidas
+        </button>
+        <button 
+          @click="activeHistoryTab = 'outgoing'" 
+          :class="{ active: activeHistoryTab === 'outgoing' }"
+          class="history-tab-button"
+        >
+          Realizadas
+        </button>
+        <button 
+          @click="activeHistoryTab = 'missed'" 
+          :class="{ active: activeHistoryTab === 'missed' }"
+          class="history-tab-button"
+        >
+          Perdidas
+        </button>
+      </div>
+      <div class="history-list-container">
+        <ul class="history-list" v-if="filteredCallHistory.length > 0">
+          <li v-for="(call, index) in filteredCallHistory" :key="index" class="history-item" :class="call.type">
+            <div class="call-icon">
+              <font-awesome-icon 
+                :icon="getCallIcon(call.type)" 
+                :class="call.type" 
+                size="sm" 
+              />
+            </div>
+            <div class="call-details">
+              <div class="call-number">{{ call.number }}</div>
+              <div class="call-time">{{ formatCallTime(call.timestamp) }}</div>
+              <div class="call-duration" v-if="call.duration && call.type !== 'missed'">
+                {{ formatDuration(call.duration) }}
+              </div>
+            </div>
+            <div class="call-actions">
+              <button @click="callFromHistory(call.number)" class="call-action-button" title="Llamar">
+                <font-awesome-icon icon="phone" size="sm" />
+              </button>
+              <button @click="copyToPhoneNumber(call.number)" class="copy-action-button" title="Copiar al teclado">
+                <font-awesome-icon icon="copy" size="sm" />
+              </button>
+            </div>
+          </li>
+        </ul>
+        <div v-else class="no-history">
+          No hay llamadas {{ getHistoryTabText() }}
+        </div>
+      </div>
+    </div>
+    
+    <!-- Agregar el diálogo de transferencia -->
+    <div v-if="transferring" class="transfer-dialog">
+      <div class="transfer-content">
+        <h3>Transferir llamada</h3>
+        <input 
+          v-model="transferNumber" 
+          placeholder="Ingrese número para transferir" 
+          class="transfer-input"
+          type="text"
+        />
+        <div class="transfer-buttons">
+          <button @click="completeTransfer" class="transfer-confirm" :disabled="!transferNumber">
+            <font-awesome-icon icon="share-square" />
+            Transferir
+          </button>
+          <button @click="cancelTransfer" class="transfer-cancel">
+            <font-awesome-icon icon="times" />
+            Cancelar
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -180,6 +292,26 @@ export default {
       activeHistoryTab: 'all', // 'all', 'incoming', 'outgoing', 'missed'
       maxHistoryItems: 50, // Número máximo de llamadas en el historial
       currentCallStart: null, // Timestamp cuando inicia la llamada actual
+      showCallHistory: true, // Controla si el historial está visible
+      showLogs: false, // Añadir propiedad para controlar la visibilidad de los logs
+      frequentContacts: [], // Lista de contactos frecuentes
+      newContact: '', // Nuevo contacto a agregar
+      incomingVolume: 1, // Volumen del audio entrante
+      outgoingVolume: 1, // Volumen del audio saliente
+      selectedAudioDevice: '', // Dispositivo de audio seleccionado
+      sipUser: '', // Usuario SIP
+      sipPassword: '', // Contraseña SIP
+      ringtone: null,
+      showVolumeControls: false,
+      showAudioDevices: false,
+      showCredentials: false,
+      isRegistered: false,
+      registrationState: '',
+      registrationInProgress: false,
+      ringtoneUrl: '/sounds/ringtone.mp3',
+      ringtonePromise: null,
+      ringbackUrl: '/sounds/ringback.mp3',
+      callState: '', // Nuevo estado para tracking de la llamada
     };
   },
   computed: {
@@ -192,8 +324,26 @@ export default {
     return this.connectionLost ? 'exclamation-triangle' : 'signal';
   },
   connectionStatusText() {
-    if (this.reconnecting) return `Reconectando (${this.reconnectAttempts}/${this.maxReconnectAttempts})`;
-    return this.connectionLost ? 'Desconectado' : 'Conectado';
+    if (this.reconnecting) {
+      return `Reconectando (${this.reconnectAttempts}/${this.maxReconnectAttempts})`;
+    }
+    if (this.connectionLost) {
+      return 'Desconectado';
+    }
+    if (this.isRegistered) {
+      return 'Registrado';
+    }
+    return this.registrationState || 'No Registrado';
+  },
+  statusText() {
+    if (this.callInProgress) return 'En llamada';
+    if (this.incomingCall) return 'Llamada entrante';
+    if (this.onHold) return 'En espera';
+    if (this.transferring) return 'Transfiriendo';
+    if (this.reconnecting) return 'Reconectando...';
+    if (this.connectionLost) return 'Sin conexión';
+    if (this.isRegistered) return 'Listo para llamar';
+    return this.registrationState || 'No registrado';
   },
   filteredCallHistory() { // Aquí faltaba la coma
     if (this.activeHistoryTab === 'all') {
@@ -205,8 +355,18 @@ export default {
 },
 mounted() {
   this.detectDevices();
-  this.initializeSIP();
+  // Cargamos primero las credenciales antes de inicializar SIP
+  this.loadCredentials();
+  // Solo inicializamos SIP si hay credenciales
+  if (this.sipUser && this.sipPassword) {
+    this.initializeSIP();
+  }
   this.loadCallHistory(); // Cargar historial de llamadas desde localStorage
+  // Cargar preferencia de visibilidad del historial
+    const savedHistoryVisibility = localStorage.getItem('showCallHistory');
+    if (savedHistoryVisibility !== null) {
+      this.showCallHistory = JSON.parse(savedHistoryVisibility);
+    }
   setInterval(this.detectDevices, 10000);
   
   // Iniciar animación de puntos para reconexión
@@ -221,6 +381,14 @@ mounted() {
   // Monitorear la conectividad a internet
   window.addEventListener('online', this.handleOnline);
   window.addEventListener('offline', this.handleOffline);
+  this.loadFrequentContacts(); // Cargar contactos frecuentes desde localStorage
+
+  // Precarga del ringtone
+  const ringtone = this.$refs.ringtoneAudio;
+  if (ringtone) {
+    ringtone.load();
+    this.log('Ringtone precargado');
+  }
 },
 beforeUnmount() {
   // Limpiar timers y event listeners
@@ -233,6 +401,8 @@ beforeUnmount() {
   if (this.ua) {
     this.ua.stop();
   }
+
+  this.stopRingtone();
 },
   methods: {
     log(message) {
@@ -255,84 +425,161 @@ beforeUnmount() {
       }
     },
     async createUserAgent(configuration) {
-    try {
-      if (this.ua) {
-        // Si ya hay un UA activo, detenerlo primero
-        await this.ua.stop();
-        this.ua = null;
-      }
-      
-      this.ua = new SIP.UserAgent(configuration);
-      
-      this.ua.transport.onConnect = () => {
-        this.status = 'Conectado';
-        this.log('Transporte WebSocket conectado');
-        this.connectionLost = false;
-        this.reconnecting = false;
-        this.reconnectAttempts = 0;
-        this.lastConnectedTime = Date.now();
-        
-        if (this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = null;
-        }
-      };
-      
-      this.ua.transport.onDisconnect = (error) => {
-        const errorMsg = error?.message || 'Desconocido';
-        this.log(`Transporte desconectado: ${errorMsg}`);
-        
-        if (this.callInProgress) {
-          this.log('Llamada interrumpida por pérdida de conexión');
-          this.resetCallState();
+      try {
+        if (this.ua) {
+          if (this.registrationInProgress) {
+            this.log('Registro en progreso, esperando...');
+            return;
+          }
+          this.log('Deteniendo UA existente');
+          await this.ua.stop();
+          this.ua = null;
         }
         
-        this.status = 'Desconectado';
+        this.ua = new SIP.UserAgent(configuration);
+        const registerer = new SIP.Registerer(this.ua, {
+          expires: 300,
+          refreshFrequency: 50,
+        });
+        
+        // Manejar eventos del registrador
+        registerer.stateChange.addListener((state) => {
+          this.log(`Estado del registrador: ${state}`);
+          this.registrationInProgress = state === SIP.RegistererState.Registering;
+          
+          switch (state) {
+            case SIP.RegistererState.Initial:
+              this.registrationState = 'Iniciando registro';
+              break;
+            case SIP.RegistererState.Registered:
+              this.isRegistered = true;
+              this.registrationState = 'Registrado';
+              this.status = 'Listo para llamar';
+              this.registrationInProgress = false;
+              break;
+            case SIP.RegistererState.Unregistered:
+              this.isRegistered = false;
+              this.registrationState = 'No registrado';
+              this.registrationInProgress = false;
+              break;
+            case SIP.RegistererState.Terminated:
+              this.isRegistered = false;
+              this.registrationState = 'Terminado';
+              this.registrationInProgress = false;
+              break;
+          }
+        });
+
+        // Modificar el delegate del UA
+        this.ua.delegate = {
+          onConnect: async () => {
+            this.log('UA conectado al servidor SIP');
+            if (!this.registrationInProgress && !this.isRegistered) {
+              this.registrationInProgress = true;
+              try {
+                await registerer.register();
+                this.log('Registro iniciado');
+              } catch (error) {
+                this.log(`Error al registrar: ${error}`);
+                this.registrationInProgress = false;
+              }
+            }
+          },
+          onDisconnect: (error) => {
+            this.log('UA desconectado del servidor SIP');
+            this.isRegistered = false;
+            this.registrationState = 'Desconectado';
+          },
+          onInvite: (invitation) => {
+            this.log(`Llamada entrante de ${invitation.remoteIdentity.uri.user}`);
+            this.incomingCall = true;
+            this.incomingSession = invitation;
+            this.incomingCaller = invitation.remoteIdentity.uri.user || 'Desconocido';
+            this.status = 'Llamada entrante';
+            this.playRingtone(); // Reproducir timbre cuando hay llamada entrante
+            this.setupSessionListeners(invitation);
+          }
+        };
+
+        await this.ua.start();
+        this.log('UA iniciado');
+        
+        // Solo registrar si no hay un registro en progreso
+        if (!this.registrationInProgress) {
+          this.registrationInProgress = true;
+          await registerer.register();
+        }
+        
+        // Guardar referencia al registrador
+        this.ua.registerer = registerer;
+        
+      } catch (error) {
+        this.registrationInProgress = false;
+        if (error.message.includes('401')) {
+          this.status = 'Error de autenticación';
+          this.log('Error de autenticación: Verifique las credenciales SIP');
+        } else {
+          this.status = 'Error de conexión';
+          this.log(`Error al conectar: ${error.message}`);
+        }
         this.connectionLost = true;
         
-        // Iniciar proceso de reconexión automática
+        // Iniciar reconexión automática
         if (!this.reconnecting) {
           this.startReconnection();
         }
-      };
+      }
+    },
 
-      this.ua.delegate = {
-        onInvite: (invitation) => {
-          this.log(`Llamada entrante de ${invitation.remoteIdentity.uri.user}`);
-          this.incomingCall = true;
-          this.incomingSession = invitation;
-          this.incomingCaller = invitation.remoteIdentity.uri.user || 'Desconocido';
-          this.status = 'Llamada entrante';
-          this.setupSessionListeners(invitation);
-        },
-      };
-
-      await this.ua.start();
-      this.log('Conexión SIP establecida');
-    } catch (error) {
-      this.status = 'Error de conexión';
-      this.log(`Error al conectar: ${error.message}`);
-      this.connectionLost = true;
+    // Agregar método para verificar estado de registro
+    checkRegistrationStatus() {
+      if (!this.ua || !this.ua.registerer || this.registrationInProgress) {
+        return;
+      }
       
-      // Iniciar reconexión automática
-      if (!this.reconnecting) {
+      const registrationStatus = this.ua.registerer.state;
+      this.log(`Verificando estado de registro: ${registrationStatus}`);
+      
+      if (this.ua.isConnected() && !this.registrationInProgress) {
+        if (registrationStatus !== SIP.RegistererState.Registered) {
+          this.log('Intentando registrar nuevamente...');
+          this.registrationInProgress = true;
+          this.ua.registerer.register()
+            .catch(error => {
+              this.log(`Error al intentar registrar: ${error}`);
+              this.registrationInProgress = false;
+            });
+        }
+      } else {
+        this.log('UA no está conectado, intentando reconectar...');
         this.startReconnection();
       }
-    }
-  },
+    },
+    // Modificar initializeSIP para incluir opciones adicionales
     async initializeSIP() {
-      const sipServer = import.meta.env.VITE_SIP_SERVER || 'wss://webrtc.soportedinamico.com:8089/ws';
-      const sipUser = import.meta.env.VITE_SIP_USER;
-      const sipPassword = import.meta.env.VITE_SIP_PASSWORD;
+      if (!this.sipUser || !this.sipPassword) {
+        this.log('Usuario o contraseña SIP no proporcionados');
+        this.status = 'Credenciales SIP no proporcionadas';
+        return;
+      }
 
-      this.log(`Iniciando conexión a ${sipServer} con usuario ${sipUser}`);
-      const uri = SIP.UserAgent.makeURI(`sip:${sipUser}@webrtc.soportedinamico.com`);
+      const sipServer = 'wss://webrtc.soportedinamico.com:8089/ws';
+      this.log(`Iniciando conexión a ${sipServer} con usuario ${this.sipUser}`);
+      
+      // Si hay una conexión existente, la detenemos primero
+      if (this.ua) {
+        this.log('Deteniendo conexión SIP existente');
+        await this.ua.stop();
+        this.ua = null;
+      }
+
+      const uri = SIP.UserAgent.makeURI(`sip:${this.sipUser}@webrtc.soportedinamico.com`);
 
       // Guardar configuración para reconexiones futuras
       this.sipConfig = {
         server: sipServer,
-        user: sipUser,
-        password: sipPassword,
+        user: this.sipUser,
+        password: this.sipPassword,
         domain: 'webrtc.soportedinamico.com'
       };
 
@@ -345,13 +592,15 @@ beforeUnmount() {
           reconnectionAttempts: 0, // Manejamos la reconexión manualmente
           reconnectionTimeout: 3,
         },
-        authorizationUsername: sipUser,
-        authorizationPassword: sipPassword,
+        authorizationUsername: this.sipUser,
+        authorizationPassword: this.sipPassword,
         register: true,
         userAgentString: `Browser Phone 0.3.29 (SIPJS - 0.20.0)`,
         registerOptions: {
           expires: 300,
           refreshFrequency: 50,
+          extraHeaders: ['X-Requested-With: SIPjs-Client'],
+          registrar: `sip:${this.sipConfig.domain}`,
         },
         sessionDescriptionHandlerFactoryOptions: {
           peerConnectionOptions: {
@@ -376,6 +625,9 @@ beforeUnmount() {
         },
       };
       await this.createUserAgent(configuration);
+      
+      // Verificar el estado de registro periódicamente
+      setInterval(() => this.checkRegistrationStatus(), 30000); // Cada 30 segundos
     },
     dial(digit) {
       this.phoneNumber += digit;
@@ -419,15 +671,21 @@ beforeUnmount() {
 
       this.session = inviter;
       this.setupSessionListeners(inviter);
+      this.callState = 'initiating'; // Marcar llamada como iniciando
 
       try {
         await inviter.invite();
-        this.currentCallStart = Date.now(); // Registrar inicio de llamada
+        this.currentCallStart = Date.now();
+        this.playRingback();
+        this.callState = 'ringing'; // Marcar llamada como sonando
+        this.status = 'Llamando...';
         this.log('Invitación SIP enviada');
       } catch (error) {
         this.status = 'Error en la llamada';
         this.log(`Error al iniciar llamada: ${error.message}`);
         this.cleanupStream();
+        this.stopRingback();
+        this.callState = '';
       }
     },
     async acceptCall() {
@@ -472,6 +730,7 @@ beforeUnmount() {
         this.callInProgress = true;
         this.incomingCall = false;
         this.status = 'En llamada';
+        this.stopRingtone(); // Detener timbre al aceptar
         this.log('Llamada aceptada');
       } catch (error) {
         this.status = 'Error al aceptar';
@@ -482,6 +741,7 @@ beforeUnmount() {
     rejectCall() {
       if (this.incomingSession) {
         this.log('Rechazando llamada entrante');
+        this.stopRingtone(); // Detener timbre al rechazar
         this.incomingSession.reject();
         this.incomingCall = false;
         this.incomingSession = null;
@@ -501,15 +761,25 @@ beforeUnmount() {
         this.log('No hay sesión activa para colgar');
         return;
       }
+      
       this.log('Colgando llamada');
       try {
-        this.session.bye();
+        // Si la llamada está sonando, usar cancel en lugar de bye
+        if (this.callState === 'ringing') {
+          this.session.cancel();
+          this.log('Llamada saliente cancelada');
+        } else {
+          this.session.bye();
+          this.log('Llamada terminada');
+        }
+        
+        this.stopRingback();
         this.resetCallState();
       } catch (error) {
         this.log(`Error al colgar: ${error.message}`);
       }
     },
-    toggleHold() {
+    async toggleHold() {
       if (!this.session) {
         this.log('No hay sesión activa para pausar/reanudar');
         return;
@@ -520,30 +790,43 @@ beforeUnmount() {
         return;
       }
 
-      if (this.onHold) {
-        this.log('Reanudando llamada');
-        this.session
-          .unhold()
-          .then(() => {
-            this.onHold = false;
-            this.status = 'En llamada';
-            this.log('Llamada reanudada');
-          })
-          .catch(error => {
-            this.log(`Error al reanudar: ${error.message}`);
-          });
-      } else {
-        this.log('Pausando llamada');
-        this.session
-          .hold()
-          .then(() => {
-            this.onHold = true;
-            this.status = 'En pausa';
-            this.log('Llamada pausada');
-          })
-          .catch(error => {
-            this.log(`Error al pausar: ${error.message}`);
-          });
+      try {
+        const sessionDescriptionHandler = this.session.sessionDescriptionHandler;
+        if (!sessionDescriptionHandler) {
+          throw new Error('Session description handler no disponible');
+        }
+
+        if (this.onHold) {
+          // Reanudar llamada
+          this.log('Reanudando llamada...');
+          const options = {
+            sessionDescriptionHandlerOptions: {
+              hold: false
+            }
+          };
+          
+          await this.session.invite(options);
+          this.onHold = false;
+          this.status = 'En llamada';
+          this.log('Llamada reanudada');
+        } else {
+          // Poner en espera
+          this.log('Poniendo llamada en espera...');
+          const options = {
+            sessionDescriptionHandlerOptions: {
+              hold: true
+            }
+          };
+          
+          await this.session.invite(options);
+          this.onHold = true;
+          this.status = 'En espera';
+          this.log('Llamada en espera');
+        }
+      } catch (error) {
+        this.log(`Error al ${this.onHold ? 'reanudar' : 'pausar'}: ${error.message}`);
+        // Restablecer estado en caso de error
+        this.onHold = !this.onHold;
       }
     },
     initTransfer() {
@@ -552,30 +835,38 @@ beforeUnmount() {
         return;
       }
       this.transferring = true;
+      this.transferNumber = '';
       this.status = 'Ingresa el número para transferir';
       this.log('Iniciando transferencia');
     },
-    completeTransfer() {
+    async completeTransfer() {
       if (!this.session || !this.transferNumber) {
         this.log('No se puede transferir: Falta número o sesión');
         return;
       }
 
-      const transferTarget = SIP.UserAgent.makeURI(`sip:${this.transferNumber}@webrtc.soportedinamico.com`);
-      this.log(`Transfiriendo llamada a ${this.transferNumber}`);
-      this.session
-        .refer(transferTarget)
-        .then(() => {
-          this.resetCallState();
-          this.transferring = false;
-          this.transferNumber = '';
-          this.status = 'Llamada transferida';
-          this.log('Transferencia completada');
-        })
-        .catch(error => {
-          this.status = 'Error al transferir';
-          this.log(`Error al transferir: ${error.message}`);
-        });
+      try {
+        const target = SIP.UserAgent.makeURI(`sip:${this.transferNumber}@webrtc.soportedinamico.com`);
+        if (!target) {
+          throw new Error('Número de transferencia inválido');
+        }
+
+        this.log(`Transfiriendo llamada a ${this.transferNumber}`);
+        await this.session.refer(target);
+        this.log('Transferencia iniciada');
+        this.status = 'Llamada transferida';
+        
+        // Limpiar estado de transferencia
+        this.transferring = false;
+        this.transferNumber = '';
+        
+        // Opcional: colgar la llamada actual después de la transferencia
+        await this.session.bye();
+        this.resetCallState();
+      } catch (error) {
+        this.log(`Error al transferir: ${error.message}`);
+        this.status = 'Error al transferir';
+      }
     },
     cancelTransfer() {
       this.transferring = false;
@@ -587,10 +878,25 @@ beforeUnmount() {
       session.stateChange.addListener(state => {
         this.log(`Estado de la sesión: ${state}`);
         if (state === SIP.SessionState.Established) {
+          this.stopRingback();
           this.status = 'En llamada';
           this.callInProgress = true;
+          this.callState = 'established';
+          this.stopRingtone();
           this.setupAudio(session);
         } else if (state === SIP.SessionState.Terminated) {
+          this.stopRingback();
+          this.stopRingtone();
+          // Si la llamada no fue establecida, registrarla como perdida
+          if (this.callState === 'ringing' && !this.incomingCall) {
+            this.addCallToHistory({
+              number: this.phoneNumber,
+              type: 'outgoing',
+              timestamp: this.currentCallStart || Date.now(),
+              duration: 0,
+              endReason: 'cancelled'
+            });
+          }
           this.resetCallState();
         }
       });
@@ -687,8 +993,10 @@ beforeUnmount() {
       this.onHold = false;
       this.transferring = false;
       this.phoneNumber = '';
-      this.status = 'Conectado';
+      this.status = this.statusText;
       this.$refs.remoteAudio.srcObject = null;
+      this.stopRingback(); // Asegurar que el ringback se detenga
+      this.callState = '';
       this.log('Estado de llamada reiniciado');
     },
     startReconnection() {
@@ -791,9 +1099,16 @@ beforeUnmount() {
   },
 
   handleOffline() {
-    this.log('Se ha perdido la conexión a internet');
-    this.connectionLost = true;
-  },
+  this.log('Se ha perdido la conexión a internet');
+  this.connectionLost = true;
+    },
+
+    // Método para mostrar/ocultar el historial
+    toggleHistoryVisibility() {
+      this.showCallHistory = !this.showCallHistory;
+      // Opcional: guardar preferencia en localStorage
+      localStorage.setItem('showCallHistory', JSON.stringify(this.showCallHistory));
+    },
     // Métodos para historial de llamadas
   addCallToHistory(call) {
     // Agregar llamada al historial
@@ -874,23 +1189,240 @@ beforeUnmount() {
       case 'missed': return 'perdidas';
       default: return 'registradas';
     }
-  }
+  },
+  toggleLogsVisibility() {
+    this.showLogs = !this.showLogs;
+  },
+  addFrequentContact() {
+    if (this.newContact && !this.frequentContacts.includes(this.newContact)) {
+      this.frequentContacts.push(this.newContact);
+      this.newContact = '';
+      this.saveFrequentContacts();
+    }
+  },
+  removeFrequentContact(index) {
+    this.frequentContacts.splice(index, 1);
+    this.saveFrequentContacts();
+  },
+  saveFrequentContacts() {
+    try {
+      localStorage.setItem('frequentContacts', JSON.stringify(this.frequentContacts));
+    } catch (error) {
+      this.log(`Error al guardar contactos frecuentes: ${error.message}`);
+    }
+  },
+  loadFrequentContacts() {
+    try {
+      const saved = localStorage.getItem('frequentContacts');
+      if (saved) {
+        this.frequentContacts = JSON.parse(saved);
+        this.log(`Contactos frecuentes cargados: ${this.frequentContacts.length} contactos`);
+      }
+    } catch (error) {
+      this.log(`Error al cargar contactos frecuentes: ${error.message}`);
+      this.frequentContacts = [];
+    }
+  },
+  adjustIncomingVolume() {
+    if (this.$refs.remoteAudio) {
+      this.$refs.remoteAudio.volume = this.incomingVolume;
+    }
+  },
+  adjustOutgoingVolume() {
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach(track => {
+        track.applyConstraints({
+          volume: this.outgoingVolume
+        });
+      });
+    }
+  },
+  async changeAudioDevice() {
+    if (!this.selectedAudioDevice) return;
+
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: { exact: this.selectedAudioDevice },
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
+
+      // Reemplazar el stream de audio en la llamada actual
+      if (this.localStream) {
+        this.localStream.getTracks().forEach(track => track.stop());
+      }
+      this.localStream = newStream;
+      this.$refs.localAudio.srcObject = this.localStream;
+
+      if (this.session) {
+        const sender = this.session.sessionDescriptionHandler.peerConnection.getSenders().find(s => s.track.kind === 'audio');
+        if (sender) {
+          sender.replaceTrack(this.localStream.getAudioTracks()[0]);
+        }
+      }
+
+      this.log(`Dispositivo de audio cambiado a: ${this.selectedAudioDevice}`);
+    } catch (error) {
+      this.log(`Error al cambiar dispositivo de audio: ${error.message}`);
+    }
+  },
+  saveCredentials() {
+    localStorage.setItem('sipUser', this.sipUser);
+    localStorage.setItem('sipPassword', this.sipPassword);
+    this.log('Credenciales SIP guardadas');
+    
+    // Reiniciar la conexión SIP después de guardar las credenciales
+    if (this.sipUser && this.sipPassword) {
+      this.log('Reiniciando conexión SIP con nuevas credenciales');
+      this.initializeSIP();
+    }
+  },
+  loadCredentials() {
+    this.sipUser = localStorage.getItem('sipUser') || '';
+    this.sipPassword = localStorage.getItem('sipPassword') || '';
+    this.log('Credenciales SIP cargadas');
+  },
+  async playRingtone() {
+    try {
+      const ringtone = this.$refs.ringtoneAudio;
+      if (!ringtone) {
+        this.log('Elemento de audio para ringtone no disponible');
+        return;
+      }
+
+      ringtone.volume = 0.5;
+      this.log('Intentando reproducir ringtone...');
+      
+      try {
+        await ringtone.play();
+        this.log('Ringtone reproduciendo');
+      } catch (error) {
+        if (error.name === 'NotAllowedError') {
+          this.log('Error: Permiso denegado para reproducir audio automáticamente');
+        } else {
+          this.log(`Error al reproducir ringtone: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      this.log(`Error general en playRingtone: ${error.message}`);
+    }
+  },
+
+  stopRingtone() {
+    try {
+      const ringtone = this.$refs.ringtoneAudio;
+      if (ringtone) {
+        ringtone.pause();
+        ringtone.currentTime = 0;
+        this.log('Ringtone detenido');
+      }
+    } catch (error) {
+      this.log(`Error al detener ringtone: ${error.message}`);
+    }
+  },
+  async playRingback() {
+    try {
+      const ringback = this.$refs.ringbackAudio;
+      if (!ringback) {
+        this.log('Elemento de audio para ringback no disponible');
+        return;
+      }
+
+      ringback.volume = 0.3; // Volumen más bajo que el ringtone
+      await ringback.play();
+      this.log('Reproduciendo ringback tone');
+    } catch (error) {
+      this.log(`Error al reproducir ringback: ${error.message}`);
+    }
+  },
+
+  stopRingback() {
+    try {
+      const ringback = this.$refs.ringbackAudio;
+      if (ringback) {
+        ringback.pause();
+        ringback.currentTime = 0;
+        this.log('Ringback detenido');
+      }
+    } catch (error) {
+      this.log(`Error al detener ringback: ${error.message}`);
+    }
+  },
+  toggleVolumeControls() {
+    this.showVolumeControls = !this.showVolumeControls;
+  },
+  toggleAudioDevices() {
+    this.showAudioDevices = !this.showAudioDevices;
+  },
+  toggleCredentials() {
+    this.showCredentials = !this.showCredentials;
+  },
+  async registerUser() {
+    if (!this.ua || this.registrationInProgress || this.isRegistered) {
+      return;
+    }
+    
+    try {
+      this.registrationInProgress = true;
+      this.log('Iniciando registro manual del usuario...');
+      await this.ua.registerer.register();
+      this.log('Registro manual iniciado');
+    } catch (error) {
+      this.log(`Error en registro manual: ${error.message}`);
+      this.registrationInProgress = false;
+    }
+  },
+
+  async unregisterUser() {
+    if (!this.ua || !this.isRegistered) {
+      return;
+    }
+    
+    try {
+      this.log('Desregistrando usuario...');
+      await this.ua.registerer.unregister();
+      this.log('Usuario desregistrado');
+    } catch (error) {
+      this.log(`Error al desregistrar: ${error.message}`);
+    }
+  },
+  handleEnterKey() {
+    // Verificar si se puede realizar la llamada
+    if (this.phoneNumber && !this.callInProgress && !this.incomingCall && !this.reconnecting) {
+      this.makeCall();
+    }
+  },
   } // Cierre de methods
 }; // Cierre de export default
   
 </script>
 
 <style scoped>
+.sip-phone-container {
+  display: flex;
+  position: relative;
+  height: 100vh;
+  background-color: #f0f0f0;
+}
+
 .sip-phone {
   display: flex;
   justify-content: center;
   align-items: center;
+  flex: 1;
   height: 100vh;
   background-color: #f0f0f0;
 }
 
 .phone-body {
-  width: 320px;
+  width: auto;
+  min-width: 600px;
+  max-width: 1200px;
+  margin: 20px;
   padding: 20px;
   background: linear-gradient(145deg, #2c2c2c, #1f1f1f);
   border-radius: 20px;
@@ -1081,6 +1613,7 @@ beforeUnmount() {
 .debug-logs h3 {
   margin: 0 0 10px 0;
   font-size: 14px;
+  cursor: pointer; /* Añadir cursor pointer para indicar que es clickeable */
 }
 
 .debug-logs ul {
@@ -1119,19 +1652,50 @@ beforeUnmount() {
   border-radius: 5px;
 }
 
-.reconnect-button {
+.connection-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.reconnect-button,
+.register-button,
+.unregister-button {
   width: 40px;
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: #007bff;
   color: white;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
 }
 
-.reconnect-button:disabled {
+.reconnect-button {
+  background: #007bff;
+}
+
+.register-button {
+  background: #28a745;
+}
+
+.unregister-button {
+  background: #dc3545;
+}
+
+.reconnect-button:hover:not(:disabled),
+.register-button:hover:not(:disabled),
+.unregister-button:hover:not(:disabled) {
+  transform: scale(1.1);
+}
+
+.reconnect-button:disabled,
+.register-button:disabled,
+.unregister-button:disabled {
   background: #666;
   cursor: not-allowed;
+  transform: none;
 }
 
 .connection-status {
@@ -1283,5 +1847,538 @@ beforeUnmount() {
   text-align: center;
   color: #aaa;
   font-size: 12px;
+}
+/* Estilos para el panel de historial a la derecha */
+.call-history-panel {
+  width: 300px;
+  height: 100vh;
+  background: #222;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+}
+
+.call-history-panel.hidden {
+  width: 0;
+}
+
+/* Botón para mostrar/ocultar el historial */
+.toggle-history-button {
+  position: absolute;
+  top: 50%;
+  right: 0; /* Mantener el botón en una posición fija */
+  transform: translateY(-50%);
+  background: #333;
+  border: none;
+  color: white;
+  width: 25px;
+  height: 60px;
+  border-radius: 5px 0 0 5px;
+  cursor: pointer;
+  z-index: 10;
+  /* Eliminar la transición para mantener el botón estático */
+}
+
+.call-history-panel.hidden + .toggle-history-button,
+.call-history-panel.hidden ~ .toggle-history-button {
+  right: 0; /* Asegurar que el botón permanezca en la misma posición */
+}
+
+/* Ajustes para el encabezado del historial */
+.history-header {
+  padding: 15px;
+  background: #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #444;
+}
+
+.history-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: white;
+}
+
+.clear-history-button {
+  background: transparent;
+  border: none;
+  color: #dc3545;
+  cursor: pointer;
+  padding: 5px;
+}
+
+.history-tabs {
+  display: flex;
+  background: #444;
+}
+
+.history-tab-button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 8px 5px;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+  transition: background 0.2s, color 0.2s;
+}
+
+.history-tab-button.active {
+  background: #666;
+  color: white;
+  font-weight: bold;
+}
+
+.history-list-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.history-item {
+  display: flex;
+  padding: 10px 15px;
+  border-bottom: 1px solid #444;
+  align-items: center;
+}
+
+.call-icon {
+  margin-right: 10px;
+  width: 20px;
+  text-align: center;
+}
+
+.incoming {
+  color: #28a745;
+}
+
+.outgoing {
+  color: #007bff;
+}
+
+.missed {
+  color: #dc3545;
+}
+
+.call-details {
+  flex-grow: 1;
+}
+
+.call-number {
+  font-size: 14px;
+  color: white;
+}
+
+.call-time, .call-duration {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 2px;
+}
+
+.call-actions {
+  display: flex;
+}
+
+.call-action-button, .copy-action-button {
+  width: 30px;
+  height: 30px;
+  background: #444;
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  margin-left: 5px;
+}
+
+.call-action-button:hover {
+  background: #28a745;
+}
+
+.copy-action-button:hover {
+  background: #007bff;
+}
+
+.no-history {
+  padding: 15px;
+  text-align: center;
+  color: #aaa;
+  font-size: 14px;
+}
+
+@media screen and (max-width: 768px) {
+  .sip-phone-container {
+    flex-direction: column;
+  }
+
+  .phone-body {
+    min-width: unset;
+    width: 100%;
+    margin: 0;
+    padding: 10px;
+  }
+
+  .call-history-panel {
+    position: absolute;
+    right: 0;
+    top: 0;
+    z-index: 5;
+    box-shadow: -3px 0 10px rgba(0, 0, 0, 0.3);
+  }
+  
+  .toggle-history-button {
+    position: fixed;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .phone-body {
+    padding: 10px;
+  }
+
+  .number-input {
+    font-size: 16px;
+  }
+
+  .dial-button {
+    width: 50px;
+    height: 50px;
+    font-size: 20px;
+  }
+
+  .call-button,
+  .hang-up-button,
+  .control-button {
+    width: 50px;
+    height: 50px;
+  }
+
+  .transfer-input {
+    font-size: 14px;
+  }
+
+  .accept-button,
+  .reject-button {
+    width: 50px;
+    height: 50px;
+  }
+
+  .debug-logs {
+    font-size: 10px;
+  }
+
+  .history-header h3 {
+    font-size: 16px;
+  }
+
+  .history-tab-button {
+    font-size: 10px;
+  }
+
+  .history-item {
+    padding: 8px 10px;
+  }
+
+  .call-number {
+    font-size: 12px;
+  }
+
+  .call-time, .call-duration {
+    font-size: 9px;
+  }
+
+  .call-action-button, .copy-action-button {
+    width: 25px;
+    height: 25px;
+  }
+
+  .no-history {
+    font-size: 12px;
+  }
+}
+.main-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.controls-section {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.left-panel {
+  flex: 1;
+  min-width: 280px;
+}
+
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.volume-and-device-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collapsible-section {
+  background: #333;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.section-header {
+  padding: 10px;
+  background: #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.section-header:hover {
+  background: #555;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.frequent-contacts {
+  margin-top: 20px;
+  background: #333;
+  padding: 10px;
+  border-radius: 5px;
+  color: white;
+}
+
+.frequent-contacts h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.frequent-contacts ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.frequent-contacts li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+}
+
+.new-contact-input {
+  width: calc(100% - 80px);
+  padding: 8px;
+  font-size: 14px;
+  background: #444;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  margin-right: 10px;
+}
+
+.add-contact-button {
+  padding: 8px 10px;
+  background: #28a745;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+}
+
+.remove-action-button {
+  background: transparent;
+  border: none;
+  color: #dc3545;
+  cursor: pointer;
+  padding: 5px;
+}
+
+.remove-action-button:hover {
+  color: #ff6b6b;
+}
+.volume-controls {
+  margin-top: 20px;
+  background: #333;
+  padding: 10px;
+  border-radius: 5px;
+  color: white;
+}
+
+.volume-controls h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.volume-control label {
+  flex: 1;
+  margin-right: 10px;
+}
+
+.volume-control input[type="range"] {
+  flex: 2;
+}
+.audio-device-controls {
+  margin-top: 20px;
+  background: #333;
+  padding: 10px;
+  border-radius: 5px;
+  color: white;
+}
+
+.audio-device-controls h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.audio-device-controls select {
+  width: 100%;
+  padding: 8px;
+  font-size: 14px;
+  background: #444;
+  border: none;
+  border-radius: 5px;
+  color: white;
+}
+.credentials {
+  margin-top: 20px;
+  background: #333;
+  padding: 10px;
+  border-radius: 5px;
+  color: white;
+}
+
+.credentials h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.credentials-input {
+  width: calc(100% - 20px);
+  padding: 8px;
+  font-size: 14px;
+  background: #444;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  margin-bottom: 10px;
+}
+
+.save-credentials-button {
+  padding: 8px 10px;
+  background: #28a745;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+}
+.connection-status.registered {
+  color: #28a745;
+}
+
+.connection-status.unregistered {
+  color: #ffc107;
+}
+.transfer-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.transfer-content {
+  background: #333;
+  padding: 20px;
+  border-radius: 10px;
+  width: 300px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.transfer-content h3 {
+  margin: 0 0 15px 0;
+  color: white;
+  text-align: center;
+}
+
+.transfer-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  background: #444;
+  border: 1px solid #555;
+  border-radius: 5px;
+  color: white;
+  font-size: 16px;
+}
+
+.transfer-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.transfer-confirm,
+.transfer-cancel {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.transfer-confirm {
+  background: #28a745;
+}
+
+.transfer-confirm:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.transfer-cancel {
+  background: #dc3545;
+}
+
+.transfer-confirm:hover:not(:disabled) {
+  background: #218838;
+}
+
+.transfer-cancel:hover {
+  background: #c82333;
 }
 </style>

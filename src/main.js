@@ -12,26 +12,50 @@ import {
     faPlay, 
     faPause, 
     faShareSquare, 
-    faCheck, 
-    faTimes, 
-    faSync,        // Asegúrate de incluir este icono
-    faSignal,
-    faExclamationTriangle
-  } from '@fortawesome/free-solid-svg-icons';
-// Agregar íconos a la biblioteca
+    faSync, 
+    faExclamationTriangle, 
+    faSignal, 
+    faTrashAlt, 
+    faChevronRight, 
+    faChevronLeft, 
+    faPhoneAlt, 
+    faPhoneVolume, 
+    faCopy,
+    // Add new icons
+    faUserPlus,
+    faUserMinus,
+    faTimes,
+    faChevronDown,
+    faChevronUp,
+} from '@fortawesome/free-solid-svg-icons';
 
+// Add icons to the library
 library.add(
     faPhone, 
     faPhoneSlash, 
     faPlay, 
     faPause, 
     faShareSquare, 
-    faCheck, 
-    faTimes, 
-    faSync,        // Asegúrate de incluir este icono
-    faSignal,
-    faExclamationTriangle
-  );
+    faSync, 
+    faExclamationTriangle, 
+    faSignal, 
+    faTrashAlt, 
+    faChevronRight, 
+    faChevronLeft, 
+    faPhoneAlt, 
+    faPhoneVolume, 
+    faCopy,
+    // Add new icons
+    faUserPlus,
+    faUserMinus,
+    faTimes,
+    faChevronDown,
+    faChevronUp,
+);
+
 const app = createApp(App);
+
+// Register the FontAwesomeIcon component globally
 app.component('font-awesome-icon', FontAwesomeIcon);
+
 app.mount('#app');

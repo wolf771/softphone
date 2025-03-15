@@ -1,7 +1,7 @@
 <template>
   <div id="app">
-
     <SipPhone />
+    <!-- Se eliminó el botón de historial de llamadas -->
   </div>
 </template>
 
