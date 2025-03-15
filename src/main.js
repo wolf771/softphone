@@ -27,6 +27,7 @@ import {
     faTimes,
     faChevronDown,
     faChevronUp,
+    faUsers, // Agregar ícono para conferencia
 } from '@fortawesome/free-solid-svg-icons';
 
 // Add icons to the library
@@ -51,6 +52,7 @@ library.add(
     faTimes,
     faChevronDown,
     faChevronUp,
+    faUsers, // Agregar ícono para conferencia
 );
 
 const app = createApp(App);

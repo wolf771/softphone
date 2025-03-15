@@ -32,11 +32,15 @@
               <button @click="hangUp" :disabled="!callInProgress && !incomingCall" class="hang-up-button">
                 <font-awesome-icon icon="phone-slash" size="lg" />
               </button>
-              <button @click="toggleHold" :disabled="!callInProgress || transferring" class="control-button">
+              <button @click="toggleHold" :disabled="!callInProgress || transferring || conferencing" class="control-button">
                 <font-awesome-icon :icon="onHold ? 'play' : 'pause'" size="lg" />
               </button>
-              <button @click="initTransfer" :disabled="!callInProgress || onHold || transferring" class="control-button">
+              <button @click="initTransfer" :disabled="!callInProgress || onHold || transferring || conferencing" class="control-button">
                 <font-awesome-icon icon="share-square" size="lg" />
+              </button>
+              <!-- Agregar botón de conferencia -->
+              <button @click="initConference" :disabled="!callInProgress || onHold || transferring || conferencing" class="control-button">
+                <font-awesome-icon icon="users" size="lg" />
               </button>
             </div>
           </div>
@@ -251,6 +255,29 @@
         </div>
       </div>
     </div>
+    
+    <!-- Agregar el diálogo de conferencia -->
+    <div v-if="conferencing" class="conference-dialog">
+      <div class="conference-content">
+        <h3>Agregar participante a la conferencia</h3>
+        <input 
+          v-model="conferenceNumber" 
+          placeholder="Ingrese número para conferencia" 
+          class="conference-input"
+          type="text"
+        />
+        <div class="conference-buttons">
+          <button @click="completeConference" class="conference-confirm" :disabled="!conferenceNumber">
+            <font-awesome-icon icon="users" />
+            Agregar
+          </button>
+          <button @click="cancelConference" class="conference-cancel">
+            <font-awesome-icon icon="times" />
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -312,6 +339,9 @@ export default {
       ringtonePromise: null,
       ringbackUrl: '/sounds/ringback.mp3',
       callState: '', // Nuevo estado para tracking de la llamada
+      conferencing: false,
+      conferenceNumber: '',
+      conferenceSession: null,
     };
   },
   computed: {
@@ -1396,6 +1426,113 @@ beforeUnmount() {
       this.makeCall();
     }
   },
+  initConference() {
+    if (!this.session) {
+      this.log('No hay sesión activa para conferencia');
+      return;
+    }
+    this.conferencing = true;
+    this.conferenceNumber = '';
+    this.status = 'Ingrese número para conferencia';
+    this.log('Iniciando conferencia');
+  },
+
+  async completeConference() {
+    if (!this.session || !this.conferenceNumber) {
+      this.log('No se puede crear conferencia: Falta número o sesión');
+      return;
+    }
+
+    try {
+      const target = SIP.UserAgent.makeURI(`sip:${this.conferenceNumber}@webrtc.soportedinamico.com`);
+      if (!target) {
+        throw new Error('Número de conferencia inválido');
+      }
+
+      // Crear nueva invitación para el participante de la conferencia
+      const inviter = new SIP.Inviter(this.ua, target, {
+        sessionDescriptionHandlerOptions: {
+          constraints: { audio: true, video: false }
+        }
+      });
+
+      this.log(`Invitando a conferencia a ${this.conferenceNumber}`);
+      
+      // Almacenar la sesión de conferencia
+      this.conferenceSession = inviter;
+      
+      // Configurar listeners para la sesión de conferencia
+      this.setupConferenceListeners(inviter);
+      
+      await inviter.invite();
+      this.log('Invitación de conferencia enviada');
+      
+      // No cerrar el diálogo hasta que el participante conteste
+      this.status = 'Llamando a participante...';
+    } catch (error) {
+      this.log(`Error al crear conferencia: ${error.message}`);
+      this.status = 'Error en conferencia';
+      this.cancelConference();
+    }
+  },
+
+  cancelConference() {
+    if (this.conferenceSession) {
+      try {
+        this.conferenceSession.cancel();
+      } catch (error) {
+        this.log(`Error al cancelar conferencia: ${error.message}`);
+      }
+      this.conferenceSession = null;
+    }
+    this.conferencing = false;
+    this.conferenceNumber = '';
+    this.status = 'En llamada';
+    this.log('Conferencia cancelada');
+  },
+
+  setupConferenceListeners(session) {
+    session.stateChange.addListener(state => {
+      this.log(`Estado de la sesión de conferencia: ${state}`);
+      if (state === SIP.SessionState.Established) {
+        this.log('Participante conectado a la conferencia');
+        this.status = 'Conferencia activa';
+        // Mezclar los streams de audio
+        this.mixConferenceAudio(session);
+        this.conferencing = false;
+      } else if (state === SIP.SessionState.Terminated) {
+        this.log('Participante desconectado de la conferencia');
+        this.conferenceSession = null;
+        if (this.conferencing) {
+          this.cancelConference();
+        }
+      }
+    });
+  },
+
+  mixConferenceAudio(conferenceSession) {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Crear nodos para ambas sesiones
+      const mainStreamSource = audioContext.createMediaStreamSource(this.session.sessionDescriptionHandler.peerConnection.getRemoteStreams()[0]);
+      const conferenceStreamSource = audioContext.createMediaStreamSource(conferenceSession.sessionDescriptionHandler.peerConnection.getRemoteStreams()[0]);
+      
+      // Crear un nodo mezclador
+      const merger = audioContext.createChannelMerger(2);
+      
+      // Conectar las fuentes al mezclador
+      mainStreamSource.connect(merger, 0, 0);
+      conferenceStreamSource.connect(merger, 0, 1);
+      
+      // Conectar el mezclador a la salida
+      merger.connect(audioContext.destination);
+      
+      this.log('Audio de conferencia mezclado correctamente');
+    } catch (error) {
+      this.log(`Error al mezclar audio de conferencia: ${error.message}`);
+    }
+  },
   } // Cierre de methods
 }; // Cierre de export default
   
@@ -2379,6 +2516,85 @@ beforeUnmount() {
 }
 
 .transfer-cancel:hover {
+  background: #c82333;
+}
+.conference-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.conference-content {
+  background: #333;
+  padding: 20px;
+  border-radius: 10px;
+  width: 300px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.conference-content h3 {
+  margin: 0 0 15px 0;
+  color: white;
+  text-align: center;
+}
+
+.conference-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  background: #444;
+  border: 1px solid #555;
+  border-radius: 5px;
+  color: white;
+  font-size: 16px;
+}
+
+.conference-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.conference-confirm,
+.conference-cancel {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.conference-confirm {
+  background: #28a745;
+}
+
+.conference-confirm:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.conference-cancel {
+  background: #dc3545;
+}
+
+.conference-confirm:hover:not(:disabled) {
+  background: #218838;
+}
+
+.conference-cancel:hover {
   background: #c82333;
 }
 </style>
