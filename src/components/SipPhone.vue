@@ -1,11 +1,21 @@
 <template>
   <div class="sip-phone-container">
-    <!-- Botón para mostrar/ocultar el historial -->
-    <button @click="toggleHistoryVisibility" class="toggle-history-button" :title="showCallHistory ? 'Ocultar historial' : 'Mostrar historial'">
-      <font-awesome-icon :icon="showCallHistory ? 'chevron-right' : 'chevron-left'" />
-    </button>
-    <div class="phone-body">
+    <!-- Contenedor principal del teléfono -->
+    <div class="main-phone-wrapper">
+      <!-- Botón para mostrar/ocultar el historial -->
+      <button @click="toggleHistoryVisibility" class="toggle-history-button" :title="showCallHistory ? 'Ocultar historial' : 'Mostrar historial'">
+        <font-awesome-icon :icon="showCallHistory ? 'chevron-right' : 'chevron-left'" />
+      </button>
+      
+      <div class="phone-body">
       <div class="main-section">
+        <div class="phone-header">
+          <button @click="toggleSettings" class="settings-button" title="Configuración">
+            <font-awesome-icon icon="cog" size="lg" />
+          </button>
+          <h2>Softphone</h2>
+        </div>
+        
         <div class="phone-screen">
           <input 
             v-model="phoneNumber" 
@@ -17,100 +27,29 @@
           <div class="status">{{ status }}</div>
         </div>
 
-        <div class="controls-section">
-          <div class="left-panel">
-            <div class="dial-pad">
-              <button v-for="digit in dialPad" :key="digit" @click="dial(digit)" :disabled="callInProgress || incomingCall" class="dial-button">
-                {{ digit }}
-              </button>
-            </div>
+        <div class="dial-pad">
+          <button v-for="digit in dialPad" :key="digit" @click="dial(digit)" :disabled="callInProgress || incomingCall" class="dial-button">
+            {{ digit }}
+          </button>
+        </div>
 
-            <div class="call-controls">
-              <button @click="makeCall" :disabled="!phoneNumber || callInProgress || incomingCall || reconnecting" class="call-button">
-                <font-awesome-icon icon="phone" size="lg" />
-              </button>
-              <button @click="hangUp" :disabled="!callInProgress && !incomingCall" class="hang-up-button">
-                <font-awesome-icon icon="phone-slash" size="lg" />
-              </button>
-              <button @click="toggleHold" :disabled="!callInProgress || transferring || conferencing" class="control-button">
-                <font-awesome-icon :icon="onHold ? 'play' : 'pause'" size="lg" />
-              </button>
-              <button @click="initTransfer" :disabled="!callInProgress || onHold || transferring || conferencing" class="control-button">
-                <font-awesome-icon icon="share-square" size="lg" />
-              </button>
-              <!-- Agregar botón de conferencia -->
-              <button @click="initConference" :disabled="!callInProgress || onHold || transferring || conferencing" class="control-button">
-                <font-awesome-icon icon="users" size="lg" />
-              </button>
-            </div>
-          </div>
-
-          <div class="right-panel">
-            <div class="volume-and-device-section">
-              <div class="collapsible-section">
-                <div class="section-header" @click="toggleVolumeControls">
-                  <h3>Controles de Volumen</h3>
-                  <font-awesome-icon :icon="showVolumeControls ? 'chevron-up' : 'chevron-down'" />
-                </div>
-                <div v-show="showVolumeControls" class="volume-controls">
-                  <h3>Controles de Volumen</h3>
-                  <div class="volume-control">
-                    <label for="incomingVolume">Volumen Entrante</label>
-                    <input type="range" id="incomingVolume" v-model="incomingVolume" min="0" max="1" step="0.01" @input="adjustIncomingVolume" />
-                  </div>
-                  <div class="volume-control">
-                    <label for="outgoingVolume">Volumen Saliente</label>
-                    <input type="range" id="outgoingVolume" v-model="outgoingVolume" min="0" max="1" step="0.01" @input="adjustOutgoingVolume" />
-                  </div>
-                </div>
-              </div>
-
-              <div class="collapsible-section">
-                <div class="section-header" @click="toggleAudioDevices">
-                  <h3>Dispositivos de Audio</h3>
-                  <font-awesome-icon :icon="showAudioDevices ? 'chevron-up' : 'chevron-down'" />
-                </div>
-                <div v-show="showAudioDevices" class="audio-device-controls">
-                  <h3>Dispositivos de Audio</h3>
-                  <select v-model="selectedAudioDevice" @change="changeAudioDevice">
-                    <option v-for="device in audioInputDevices" :key="device.deviceId" :value="device.deviceId">
-                      {{ device.label || 'Dispositivo sin etiqueta' }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="collapsible-section">
-                <div class="section-header" @click="toggleCredentials">
-                  <h3>Credenciales SIP</h3>
-                  <font-awesome-icon :icon="showCredentials ? 'chevron-up' : 'chevron-down'" />
-                </div>
-                <div v-show="showCredentials" class="credentials">
-                  <h3>Credenciales SIP</h3>
-                  <input v-model="sipUser" placeholder="Usuario SIP" class="credentials-input" />
-                  <input v-model="sipPassword" type="password" placeholder="Contraseña SIP" class="credentials-input" />
-                  <button @click="saveCredentials" class="save-credentials-button">Guardar Credenciales</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="frequent-contacts">
-              <h3>Contactos Frecuentes</h3>
-              <ul>
-                <li v-for="(contact, index) in frequentContacts" :key="index">
-                  {{ contact }}
-                  <button @click="callFromHistory(contact)" class="call-action-button" title="Llamar">
-                    <font-awesome-icon icon="phone" size="sm" />
-                  </button>
-                  <button @click="removeFrequentContact(index)" class="remove-action-button" title="Eliminar">
-                    <font-awesome-icon icon="trash-alt" size="sm" />
-                  </button>
-                </li>
-              </ul>
-              <input v-model="newContact" placeholder="Agregar nuevo contacto" class="new-contact-input" />
-              <button @click="addFrequentContact" class="add-contact-button">Agregar</button>
-            </div>
-          </div>
+        <div class="call-controls">
+          <button @click="makeCall" :disabled="!phoneNumber || callInProgress || incomingCall || reconnecting" class="call-button">
+            <font-awesome-icon icon="phone" size="lg" />
+          </button>
+          <button @click="hangUp" :disabled="!callInProgress && !incomingCall" class="hang-up-button">
+            <font-awesome-icon icon="phone-slash" size="lg" />
+          </button>
+          <button @click="toggleHold" :disabled="!callInProgress || transferring || conferencing" class="control-button">
+            <font-awesome-icon :icon="onHold ? 'play' : 'pause'" size="lg" />
+          </button>
+          <button @click="initTransfer" :disabled="!callInProgress || onHold || transferring || conferencing" class="control-button">
+            <font-awesome-icon icon="share-square" size="lg" />
+          </button>
+          <!-- Agregar botón de conferencia -->
+          <button @click="initConference" :disabled="!callInProgress || onHold || transferring || conferencing" class="control-button">
+            <font-awesome-icon icon="users" size="lg" />
+          </button>
         </div>
       </div>
 
@@ -161,6 +100,7 @@
         <source src="/sounds/ringback.mp3" type="audio/mpeg">
       </audio>
     </div>
+    </div> <!-- Cierre del main-phone-wrapper -->
     
     <!-- Panel de historial a la derecha -->
     <div class="call-history-panel" :class="{ 'hidden': !showCallHistory }">
@@ -278,11 +218,108 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal de Configuración -->
+    <div v-if="showSettings" class="settings-modal-overlay" @click="closeSettings">
+      <div class="settings-modal" @click.stop>
+        <div class="settings-header">
+          <h2>Configuración</h2>
+          <button @click="closeSettings" class="close-button">
+            <font-awesome-icon icon="times" />
+          </button>
+        </div>
+        
+        <div class="settings-content">
+          <!-- Controles de Volumen -->
+          <div class="settings-section">
+            <div class="section-header" @click="toggleVolumeControls">
+              <h3>Controles de Volumen</h3>
+              <font-awesome-icon :icon="showVolumeControls ? 'chevron-up' : 'chevron-down'" />
+            </div>
+            <div v-show="showVolumeControls" class="section-content">
+              <div class="volume-control">
+                <label for="incomingVolume">Volumen Entrante</label>
+                <input type="range" id="incomingVolume" v-model="incomingVolume" min="0" max="1" step="0.01" @input="adjustIncomingVolume" />
+                <span class="volume-value">{{ Math.round(incomingVolume * 100) }}%</span>
+              </div>
+              <div class="volume-control">
+                <label for="outgoingVolume">Volumen Saliente</label>
+                <input type="range" id="outgoingVolume" v-model="outgoingVolume" min="0" max="1" step="0.01" @input="adjustOutgoingVolume" />
+                <span class="volume-value">{{ Math.round(outgoingVolume * 100) }}%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dispositivos de Audio -->
+          <div class="settings-section">
+            <div class="section-header" @click="toggleAudioDevices">
+              <h3>Dispositivos de Audio</h3>
+              <font-awesome-icon :icon="showAudioDevices ? 'chevron-up' : 'chevron-down'" />
+            </div>
+            <div v-show="showAudioDevices" class="section-content">
+              <label for="audioDevice">Dispositivo de Audio:</label>
+              <select id="audioDevice" v-model="selectedAudioDevice" @change="changeAudioDevice">
+                <option v-for="device in audioInputDevices" :key="device.deviceId" :value="device.deviceId">
+                  {{ device.label || 'Dispositivo sin etiqueta' }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Credenciales SIP -->
+          <div class="settings-section">
+            <div class="section-header" @click="toggleCredentials">
+              <h3>Credenciales SIP</h3>
+              <font-awesome-icon :icon="showCredentials ? 'chevron-up' : 'chevron-down'" />
+            </div>
+            <div v-show="showCredentials" class="section-content">
+              <div class="input-group">
+                <label for="sipUser">Usuario SIP:</label>
+                <input id="sipUser" v-model="sipUser" placeholder="Usuario SIP" class="settings-input" />
+              </div>
+              <div class="input-group">
+                <label for="sipPassword">Contraseña SIP:</label>
+                <input id="sipPassword" v-model="sipPassword" type="password" placeholder="Contraseña SIP" class="settings-input" />
+              </div>
+              <button @click="saveCredentials" class="save-button">Guardar Credenciales</button>
+            </div>
+          </div>
+
+          <!-- Contactos Frecuentes -->
+          <div class="settings-section">
+            <div class="section-header" @click="toggleFrequentContacts">
+              <h3>Contactos Frecuentes</h3>
+              <font-awesome-icon :icon="showFrequentContacts ? 'chevron-up' : 'chevron-down'" />
+            </div>
+            <div v-show="showFrequentContacts" class="section-content">
+              <div class="contacts-list">
+                <div v-for="(contact, index) in frequentContacts" :key="index" class="contact-item">
+                  <span class="contact-number">{{ contact }}</span>
+                  <div class="contact-actions">
+                    <button @click="callFromHistory(contact)" class="contact-call-button" title="Llamar">
+                      <font-awesome-icon icon="phone" size="sm" />
+                    </button>
+                    <button @click="removeFrequentContact(index)" class="contact-remove-button" title="Eliminar">
+                      <font-awesome-icon icon="trash-alt" size="sm" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="add-contact">
+                <input v-model="newContact" placeholder="Agregar nuevo contacto" class="settings-input" />
+                <button @click="addFrequentContact" class="add-button">Agregar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import * as SIP from 'sip.js';
+import './SipPhone.styles.css';
 
 export default {
   name: 'SipPhone',
@@ -332,6 +369,8 @@ export default {
       showVolumeControls: false,
       showAudioDevices: false,
       showCredentials: false,
+      showFrequentContacts: false,
+      showSettings: false, // Controla la visibilidad del modal de configuración
       isRegistered: false,
       registrationState: '',
       registrationInProgress: false,
@@ -858,6 +897,7 @@ beforeUnmount() {
         // Restablecer estado en caso de error
         this.onHold = !this.onHold;
       }
+
     },
     initTransfer() {
       if (!this.session) {
@@ -1391,6 +1431,15 @@ beforeUnmount() {
   toggleCredentials() {
     this.showCredentials = !this.showCredentials;
   },
+  toggleFrequentContacts() {
+    this.showFrequentContacts = !this.showFrequentContacts;
+  },
+  toggleSettings() {
+    this.showSettings = true;
+  },
+  closeSettings() {
+    this.showSettings = false;
+  },
   async registerUser() {
     if (!this.ua || this.registrationInProgress || this.isRegistered) {
       return;
@@ -1539,1062 +1588,5 @@ beforeUnmount() {
 </script>
 
 <style scoped>
-.sip-phone-container {
-  display: flex;
-  position: relative;
-  height: 100vh;
-  background-color: #f0f0f0;
-}
-
-.sip-phone {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex: 1;
-  height: 100vh;
-  background-color: #f0f0f0;
-}
-
-.phone-body {
-  width: auto;
-  min-width: 600px;
-  max-width: 1200px;
-  margin: 20px;
-  padding: 20px;
-  background: linear-gradient(145deg, #2c2c2c, #1f1f1f);
-  border-radius: 20px;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
-  color: white;
-}
-
-.phone-screen {
-  background: #000;
-  padding: 15px;
-  border-radius: 15px 15px 0 0;
-  text-align: center;
-}
-
-.number-input {
-  width: 100%;
-  padding: 10px;
-  font-size: 20px;
-  background: #333;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  text-align: center;
-}
-
-.status {
-  margin-top: 10px;
-  font-size: 14px;
-  color: #bbb;
-}
-
-.dial-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  padding: 20px;
-}
-
-.dial-button {
-  width: 60px;
-  height: 60px;
-  background: #444;
-  border: none;
-  border-radius: 50%;
-  color: white;
-  font-size: 24px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-  transition: background 0.2s;
-}
-
-.dial-button:hover:not(:disabled) {
-  background: #555;
-}
-
-.dial-button:disabled {
-  background: #666;
-  cursor: not-allowed;
-}
-
-.call-controls {
-  display: flex;
-  justify-content: space-around;
-  padding: 10px 0;
-}
-
-.call-button,
-.hang-up-button,
-.control-button {
-  width: 60px;
-  height: 60px;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s;
-}
-
-.call-button {
-  background: #28a745;
-}
-
-.call-button:hover:not(:disabled) {
-  transform: scale(1.1);
-}
-
-.hang-up-button {
-  background: #dc3545;
-}
-
-.hang-up-button:hover:not(:disabled) {
-  transform: scale(1.1);
-}
-
-.control-button {
-  background: #007bff;
-}
-
-.control-button:hover:not(:disabled) {
-  transform: scale(1.1);
-}
-
-.control-button:disabled,
-.call-button:disabled,
-.hang-up-button:disabled {
-  background: #666;
-  cursor: not-allowed;
-}
-
-.transfer-section {
-  padding: 10px;
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-.transfer-input {
-  padding: 8px;
-  font-size: 16px;
-  background: #333;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  width: 60%;
-}
-
-.transfer-confirm,
-.transfer-cancel {
-  width: 40px;
-  height: 40px;
-  background: #28a745;
-  border: none;
-  border-radius: 50%;
-  color: white;
-  cursor: pointer;
-}
-
-.transfer-cancel {
-  background: #dc3545;
-}
-
-.incoming-call {
-  padding: 10px;
-  background: #222;
-  border-radius: 5px;
-  text-align: center;
-}
-
-.incoming-call p {
-  margin: 0 0 10px 0;
-}
-
-.accept-button,
-.reject-button {
-  width: 60px;
-  height: 60px;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  margin: 0 10px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-}
-
-.accept-button {
-  background: #28a745;
-}
-
-.reject-button {
-  background: #dc3545;
-}
-
-.debug-logs {
-  margin-top: 20px;
-  max-height: 150px;
-  overflow-y: auto;
-  background: #333;
-  padding: 10px;
-  border-radius: 5px;
-  font-size: 12px;
-}
-
-.debug-logs h3 {
-  margin: 0 0 10px 0;
-  font-size: 14px;
-  cursor: pointer; /* Añadir cursor pointer para indicar que es clickeable */
-}
-
-.debug-logs ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.debug-logs li {
-  padding: 2px 0;
-  color: #ccc;
-}
-.reconnecting-indicator {
-  margin-top: 5px;
-  font-size: 12px;
-  color: #ffc107;
-  animation: blink 1s infinite;
-}
-
-.reconnecting-indicator .dots {
-  display: inline-block;
-  min-width: 20px;
-}
-
-@keyframes blink {
-  50% { opacity: 0.5; }
-}
-
-.connection-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
-  padding: 8px;
-  background: #333;
-  border-radius: 5px;
-}
-
-.connection-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.reconnect-button,
-.register-button,
-.unregister-button {
-  width: 40px;
-  height: 40px;
-  border: none;
-  border-radius: 50%;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s;
-}
-
-.reconnect-button {
-  background: #007bff;
-}
-
-.register-button {
-  background: #28a745;
-}
-
-.unregister-button {
-  background: #dc3545;
-}
-
-.reconnect-button:hover:not(:disabled),
-.register-button:hover:not(:disabled),
-.unregister-button:hover:not(:disabled) {
-  transform: scale(1.1);
-}
-
-.reconnect-button:disabled,
-.register-button:disabled,
-.unregister-button:disabled {
-  background: #666;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-}
-
-.connection-status.connected {
-  color: #28a745;
-}
-
-.connection-status.disconnected {
-  color: #dc3545;
-}
-
-.connection-status.reconnecting {
-  color: #ffc107;
-}
-/* Estilos para historial de llamadas */
-.call-history {
-  margin-top: 15px;
-  background: #222;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.history-header {
-  padding: 10px;
-  background: #333;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.history-header h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.clear-history-button {
-  background: transparent;
-  border: none;
-  color: #dc3545;
-  cursor: pointer;
-  padding: 5px;
-}
-
-.history-tabs {
-  display: flex;
-  background: #444;
-}
-
-.history-tab-button {
-  flex: 1;
-  background: transparent;
-  border: none;
-  padding: 8px 5px;
-  color: #ccc;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: center;
-  transition: background 0.2s, color 0.2s;
-}
-
-.history-tab-button.active {
-  background: #666;
-  color: white;
-  font-weight: bold;
-}
-
-.history-list-container {
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 0;
-}
-
-.history-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.history-item {
-  display: flex;
-  padding: 10px;
-  border-bottom: 1px solid #444;
-  align-items: center;
-}
-
-.call-icon {
-  margin-right: 10px;
-  width: 20px;
-  text-align: center;
-}
-
-.incoming {
-  color: #28a745;
-}
-
-.outgoing {
-  color: #007bff;
-}
-
-.missed {
-  color: #dc3545;
-}
-
-.call-details {
-  flex-grow: 1;
-}
-
-.call-number {
-  font-size: 14px;
-}
-
-.call-time, .call-duration {
-  font-size: 10px;
-  color: #aaa;
-  margin-top: 2px;
-}
-
-.call-actions {
-  display: flex;
-}
-
-.call-action-button, .copy-action-button {
-  width: 30px;
-  height: 30px;
-  background: #444;
-  border: none;
-  border-radius: 50%;
-  color: white;
-  cursor: pointer;
-  margin-left: 5px;
-}
-
-.call-action-button:hover {
-  background: #28a745;
-}
-
-.copy-action-button:hover {
-  background: #007bff;
-}
-
-.no-history {
-  padding: 15px;
-  text-align: center;
-  color: #aaa;
-  font-size: 12px;
-}
-/* Estilos para el panel de historial a la derecha */
-.call-history-panel {
-  width: 300px;
-  height: 100vh;
-  background: #222;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  transition: width 0.3s ease;
-}
-
-.call-history-panel.hidden {
-  width: 0;
-}
-
-/* Botón para mostrar/ocultar el historial */
-.toggle-history-button {
-  position: absolute;
-  top: 50%;
-  right: 0; /* Mantener el botón en una posición fija */
-  transform: translateY(-50%);
-  background: #333;
-  border: none;
-  color: white;
-  width: 25px;
-  height: 60px;
-  border-radius: 5px 0 0 5px;
-  cursor: pointer;
-  z-index: 10;
-  /* Eliminar la transición para mantener el botón estático */
-}
-
-.call-history-panel.hidden + .toggle-history-button,
-.call-history-panel.hidden ~ .toggle-history-button {
-  right: 0; /* Asegurar que el botón permanezca en la misma posición */
-}
-
-/* Ajustes para el encabezado del historial */
-.history-header {
-  padding: 15px;
-  background: #333;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #444;
-}
-
-.history-header h3 {
-  margin: 0;
-  font-size: 18px;
-  color: white;
-}
-
-.clear-history-button {
-  background: transparent;
-  border: none;
-  color: #dc3545;
-  cursor: pointer;
-  padding: 5px;
-}
-
-.history-tabs {
-  display: flex;
-  background: #444;
-}
-
-.history-tab-button {
-  flex: 1;
-  background: transparent;
-  border: none;
-  padding: 8px 5px;
-  color: #ccc;
-  cursor: pointer;
-  font-size: 12px;
-  text-align: center;
-  transition: background 0.2s, color 0.2s;
-}
-
-.history-tab-button.active {
-  background: #666;
-  color: white;
-  font-weight: bold;
-}
-
-.history-list-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0;
-}
-
-.history-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.history-item {
-  display: flex;
-  padding: 10px 15px;
-  border-bottom: 1px solid #444;
-  align-items: center;
-}
-
-.call-icon {
-  margin-right: 10px;
-  width: 20px;
-  text-align: center;
-}
-
-.incoming {
-  color: #28a745;
-}
-
-.outgoing {
-  color: #007bff;
-}
-
-.missed {
-  color: #dc3545;
-}
-
-.call-details {
-  flex-grow: 1;
-}
-
-.call-number {
-  font-size: 14px;
-  color: white;
-}
-
-.call-time, .call-duration {
-  font-size: 11px;
-  color: #aaa;
-  margin-top: 2px;
-}
-
-.call-actions {
-  display: flex;
-}
-
-.call-action-button, .copy-action-button {
-  width: 30px;
-  height: 30px;
-  background: #444;
-  border: none;
-  border-radius: 50%;
-  color: white;
-  cursor: pointer;
-  margin-left: 5px;
-}
-
-.call-action-button:hover {
-  background: #28a745;
-}
-
-.copy-action-button:hover {
-  background: #007bff;
-}
-
-.no-history {
-  padding: 15px;
-  text-align: center;
-  color: #aaa;
-  font-size: 14px;
-}
-
-@media screen and (max-width: 768px) {
-  .sip-phone-container {
-    flex-direction: column;
-  }
-
-  .phone-body {
-    min-width: unset;
-    width: 100%;
-    margin: 0;
-    padding: 10px;
-  }
-
-  .call-history-panel {
-    position: absolute;
-    right: 0;
-    top: 0;
-    z-index: 5;
-    box-shadow: -3px 0 10px rgba(0, 0, 0, 0.3);
-  }
-  
-  .toggle-history-button {
-    position: fixed;
-  }
-}
-
-@media screen and (max-width: 480px) {
-  .phone-body {
-    padding: 10px;
-  }
-
-  .number-input {
-    font-size: 16px;
-  }
-
-  .dial-button {
-    width: 50px;
-    height: 50px;
-    font-size: 20px;
-  }
-
-  .call-button,
-  .hang-up-button,
-  .control-button {
-    width: 50px;
-    height: 50px;
-  }
-
-  .transfer-input {
-    font-size: 14px;
-  }
-
-  .accept-button,
-  .reject-button {
-    width: 50px;
-    height: 50px;
-  }
-
-  .debug-logs {
-    font-size: 10px;
-  }
-
-  .history-header h3 {
-    font-size: 16px;
-  }
-
-  .history-tab-button {
-    font-size: 10px;
-  }
-
-  .history-item {
-    padding: 8px 10px;
-  }
-
-  .call-number {
-    font-size: 12px;
-  }
-
-  .call-time, .call-duration {
-    font-size: 9px;
-  }
-
-  .call-action-button, .copy-action-button {
-    width: 25px;
-    height: 25px;
-  }
-
-  .no-history {
-    font-size: 12px;
-  }
-}
-.main-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.controls-section {
-  display: flex;
-  gap: 20px;
-  margin-top: 20px;
-}
-
-.left-panel {
-  flex: 1;
-  min-width: 280px;
-}
-
-.right-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.volume-and-device-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.collapsible-section {
-  background: #333;
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-.section-header {
-  padding: 10px;
-  background: #444;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-}
-
-.section-header:hover {
-  background: #555;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 16px;
-}
-.frequent-contacts {
-  margin-top: 20px;
-  background: #333;
-  padding: 10px;
-  border-radius: 5px;
-  color: white;
-}
-
-.frequent-contacts h3 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.frequent-contacts ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.frequent-contacts li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 5px 0;
-}
-
-.new-contact-input {
-  width: calc(100% - 80px);
-  padding: 8px;
-  font-size: 14px;
-  background: #444;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  margin-right: 10px;
-}
-
-.add-contact-button {
-  padding: 8px 10px;
-  background: #28a745;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-}
-
-.remove-action-button {
-  background: transparent;
-  border: none;
-  color: #dc3545;
-  cursor: pointer;
-  padding: 5px;
-}
-
-.remove-action-button:hover {
-  color: #ff6b6b;
-}
-.volume-controls {
-  margin-top: 20px;
-  background: #333;
-  padding: 10px;
-  border-radius: 5px;
-  color: white;
-}
-
-.volume-controls h3 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.volume-control {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.volume-control label {
-  flex: 1;
-  margin-right: 10px;
-}
-
-.volume-control input[type="range"] {
-  flex: 2;
-}
-.audio-device-controls {
-  margin-top: 20px;
-  background: #333;
-  padding: 10px;
-  border-radius: 5px;
-  color: white;
-}
-
-.audio-device-controls h3 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.audio-device-controls select {
-  width: 100%;
-  padding: 8px;
-  font-size: 14px;
-  background: #444;
-  border: none;
-  border-radius: 5px;
-  color: white;
-}
-.credentials {
-  margin-top: 20px;
-  background: #333;
-  padding: 10px;
-  border-radius: 5px;
-  color: white;
-}
-
-.credentials h3 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-}
-
-.credentials-input {
-  width: calc(100% - 20px);
-  padding: 8px;
-  font-size: 14px;
-  background: #444;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  margin-bottom: 10px;
-}
-
-.save-credentials-button {
-  padding: 8px 10px;
-  background: #28a745;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-}
-.connection-status.registered {
-  color: #28a745;
-}
-
-.connection-status.unregistered {
-  color: #ffc107;
-}
-.transfer-dialog {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.transfer-content {
-  background: #333;
-  padding: 20px;
-  border-radius: 10px;
-  width: 300px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-
-.transfer-content h3 {
-  margin: 0 0 15px 0;
-  color: white;
-  text-align: center;
-}
-
-.transfer-input {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 15px;
-  background: #444;
-  border: 1px solid #555;
-  border-radius: 5px;
-  color: white;
-  font-size: 16px;
-}
-
-.transfer-buttons {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.transfer-confirm,
-.transfer-cancel {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  font-size: 14px;
-}
-
-.transfer-confirm {
-  background: #28a745;
-}
-
-.transfer-confirm:disabled {
-  background: #666;
-  cursor: not-allowed;
-}
-
-.transfer-cancel {
-  background: #dc3545;
-}
-
-.transfer-confirm:hover:not(:disabled) {
-  background: #218838;
-}
-
-.transfer-cancel:hover {
-  background: #c82333;
-}
-.conference-dialog {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.conference-content {
-  background: #333;
-  padding: 20px;
-  border-radius: 10px;
-  width: 300px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-
-.conference-content h3 {
-  margin: 0 0 15px 0;
-  color: white;
-  text-align: center;
-}
-
-.conference-input {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 15px;
-  background: #444;
-  border: 1px solid #555;
-  border-radius: 5px;
-  color: white;
-  font-size: 16px;
-}
-
-.conference-buttons {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.conference-confirm,
-.conference-cancel {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  font-size: 14px;
-}
-
-.conference-confirm {
-  background: #28a745;
-}
-
-.conference-confirm:disabled {
-  background: #666;
-  cursor: not-allowed;
-}
-
-.conference-cancel {
-  background: #dc3545;
-}
-
-.conference-confirm:hover:not(:disabled) {
-  background: #218838;
-}
-
-.conference-cancel:hover {
-  background: #c82333;
-}
+/* Los estilos se han movido a SipPhone.styles.css */
 </style>

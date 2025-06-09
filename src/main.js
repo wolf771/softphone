@@ -28,6 +28,7 @@ import {
     faChevronDown,
     faChevronUp,
     faUsers, // Agregar ícono para conferencia
+    faCog, // Icono de configuración (engranaje)
 } from '@fortawesome/free-solid-svg-icons';
 
 // Add icons to the library
@@ -53,6 +54,7 @@ library.add(
     faChevronDown,
     faChevronUp,
     faUsers, // Agregar ícono para conferencia
+    faCog, // Icono de configuración (engranaje)
 );
 
 const app = createApp(App);
